@@ -1,6 +1,6 @@
 {
   "name": "sentinel-app",
-  "version": "2.39.0",
+  "version": "2.40.0",
   "description": "Sentinel - desktop security console (runs tools, a live terminal, and local AI)",
   "main": "main.js",
   "author": "Sentinel <jawahar6k@gmail.com>",
