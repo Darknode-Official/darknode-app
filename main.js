@@ -97,18 +97,36 @@ const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g
 // ranges so net:get can't be turned into an SSRF/exfil channel by tool input.
 function isPrivateHost(h) {
   h = String(h || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h) return true;
   if (h === "localhost" || h.endsWith(".localhost")) return true;
-  if (h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
+  if (h === "::" || h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
+  const mapped = h.match(/^::ffff:(.+)$/i);            // IPv4-mapped IPv6 -> check the v4 tail
+  if (mapped) return isPrivateHost(mapped[1]);
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const a = +m[1], b = +m[2];
+    if (a > 255 || b > 255 || +m[3] > 255 || +m[4] > 255) return true; // malformed -> deny
     if (a === 127 || a === 0 || a === 10) return true;
     if (a === 169 && b === 254) return true;           // link-local + cloud metadata
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+    return false;
   }
+  // Not a dotted-quad literal: any non-canonical numeric encoding (decimal/hex/octal/
+  // short-form) is only reachable after DNS resolution — the caller must also check the
+  // RESOLVED address via resolvesToPrivate(). A bare integer host here is suspicious -> deny.
+  if (/^(0x[0-9a-f]+|\d+)$/.test(h)) return true;
   return false;
+}
+// Resolve a hostname and return true if ANY resolved address is private. Defeats
+// public-name -> private-IP (DNS-rebind) and every non-canonical IPv4 encoding, since
+// dns.lookup canonicalizes them. Fails closed (treat lookup failure as blocked).
+async function resolvesToPrivate(host) {
+  try {
+    const addrs = await require("dns").promises.lookup(host, { all: true });
+    return addrs.length === 0 || addrs.some((a) => isPrivateHost(a.address));
+  } catch (_) { return true; }
 }
 async function gmailExchange(params) {
   const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params).toString() });
@@ -168,7 +186,7 @@ ipcMain.handle("net:get", async (_e, opts) => {
   try {
     if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, status: 0, error: "bad url" };
     let host = ""; try { host = new URL(url).hostname; } catch (_) { return { ok: false, status: 0, error: "bad url" }; }
-    if (isPrivateHost(host)) return { ok: false, status: 0, error: "blocked host (loopback/link-local/private not allowed)" };
+    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, status: 0, error: "blocked host (loopback/link-local/private not allowed)" };
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 20000);
     try {
@@ -235,7 +253,7 @@ ipcMain.handle("agent:exec", (_e, { command, cwd, timeout, autopass }) => new Pr
   catch (err) { return finish({ ok: false, error: err.message }); }
   const add = (d) => { if (out.length < cap + 200) out += d.toString(); };
   p.stdout.on("data", add); p.stderr.on("data", add);
-  p.on("close", (code) => finish({ ok: true, code, killed, output: out.length > cap ? out.slice(0, cap) + "\n...[truncated]" : (out || "(no output)") }));
+  p.on("close", (code) => { let c = out; if (autopass) c = c.split(autopass).join("***"); finish({ ok: true, code, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
   p.on("error", (err) => finish({ ok: false, error: err.message }));
   to = setTimeout(() => { killed = true; try { p.kill("SIGKILL"); } catch (_) {} }, timeout || 60000);
 }));
@@ -447,7 +465,12 @@ ipcMain.handle("gov:compliance:build", (_e, opts) => {
 });
 ipcMain.handle("gov:compliance:verify", (_e, { bundle, signingKey }) => { try { return Object.assign({ ok: true }, verifyBundle(bundle, signingKey || process.env.SENTINEL_SIGNING_KEY || undefined)); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 
-ipcMain.handle("openExternal", (_e, url) => shell.openExternal(url));
+ipcMain.handle("openExternal", (_e, url) => {
+  // Only open web URLs in the OS browser — never file://, or app/protocol-handler
+  // schemes a browsed/redirected page could smuggle in.
+  try { const p = new URL(String(url)).protocol; if (p === "http:" || p === "https:") return shell.openExternal(url); } catch (_) {}
+  return false;
+});
 
 // ---- custom (frameless) window controls ----
 ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
@@ -910,9 +933,9 @@ ipcMain.handle("vm:create", async (_e, { name, memMB, cpus, diskGB, iso }) => {
 // Build a Sentinel OS VM on a chosen base OS: reuse the tested sentinel-os build.sh
 // (downloads the base cloud image + builds the cloud-init seed), then register the VM.
 // The disk self-provisions the Sentinel desktop + toolset on first boot.
-ipcMain.handle("vm:buildSentinel", async (_e, { name, os, memMB, cpus, diskGB }) => {
+ipcMain.handle("vm:buildSentinel", async (_e, { name, os: baseOS, memMB, cpus, diskGB }) => {
   vmEnsureDirs();
-  if (!SENTINEL_OS_BASES[os]) return { ok: false, error: "unknown base OS '" + os + "'" };
+  if (!SENTINEL_OS_BASES[baseOS]) return { ok: false, error: "unknown base OS '" + baseOS + "'" };
   const dep = await vmExec("bash", ["-lc", "command -v git >/dev/null && command -v qemu-img >/dev/null && { command -v xorriso >/dev/null || command -v genisoimage >/dev/null || command -v cloud-localds >/dev/null; }"], 8000);
   if (dep.code !== 0) return { ok: false, error: "Missing build tools. Install them: sudo apt install git qemu-utils xorriso" };
   const SRC = path.join(VM_DIR, "sentinel-os-src");
@@ -924,18 +947,18 @@ ipcMain.handle("vm:buildSentinel", async (_e, { name, os, memMB, cpus, diskGB })
     vmBuildLog("Updating the Sentinel OS build recipe…\n");
     await vmExecStream("git", ["-C", SRC, "pull", "--ff-only"], 60000);
   }
-  vmBuildLog("\nBuilding the " + os + " base image + cloud-init seed (downloads a few hundred MB)…\n");
-  const b = await vmExecStream("bash", ["-lc", 'cd "' + SRC + '" && rm -f sentinel-os.qcow2 seed.iso && SENTINEL_BASE=' + os + " ./build.sh " + os], 1800000);
+  vmBuildLog("\nBuilding the " + baseOS + " base image + cloud-init seed (downloads a few hundred MB)…\n");
+  const b = await vmExecStream("bash", ["-lc", 'cd "' + SRC + '" && rm -f sentinel-os.qcow2 seed.iso && SENTINEL_BASE=' + baseOS + " ./build.sh " + baseOS], 1800000);
   const builtDisk = path.join(SRC, "sentinel-os.qcow2"), builtSeed = path.join(SRC, "seed.iso");
   if (b.code !== 0 || !fs.existsSync(builtDisk)) return { ok: false, error: "build failed: " + (b.err || b.out || "no disk produced").slice(-300) };
-  name = (name || ("sentinel-" + os)).replace(/[^\w.-]/g, "_").slice(0, 40) || ("sentinel-" + os);
+  name = (name || ("sentinel-" + baseOS)).replace(/[^\w.-]/g, "_").slice(0, 40) || ("sentinel-" + baseOS);
   const id = "vm" + Date.now().toString(36);
   const disk = path.join(VM_DISKS, id + ".qcow2"), seed = path.join(VM_DISKS, id + "-seed.iso");
   try { fs.renameSync(builtDisk, disk); } catch (_) { fs.copyFileSync(builtDisk, disk); fs.unlinkSync(builtDisk); }
   if (fs.existsSync(builtSeed)) { try { fs.renameSync(builtSeed, seed); } catch (_) { fs.copyFileSync(builtSeed, seed); } }
   await vmExec("qemu-img", ["resize", disk, Math.max(20, Math.min(512, parseInt(diskGB, 10) || 30)) + "G"], 30000);
   const vms = vmReadStore();
-  const vm = { id, name, memMB: Math.max(1024, Math.min(65536, parseInt(memMB, 10) || 4096)), cpus: Math.max(1, Math.min(32, parseInt(cpus, 10) || 2)), disk, seed: fs.existsSync(seed) ? seed : "", iso: "", os, sentinel: true, created: Date.now() };
+  const vm = { id, name, memMB: Math.max(1024, Math.min(65536, parseInt(memMB, 10) || 4096)), cpus: Math.max(1, Math.min(32, parseInt(cpus, 10) || 2)), disk, seed: fs.existsSync(seed) ? seed : "", iso: "", os: baseOS, sentinel: true, created: Date.now() };
   vms.push(vm); vmWriteStore(vms);
   vmBuildLog("\n✓ Built '" + name + "'. Start it to self-provision on first boot.\n");
   return { ok: true, vm };
@@ -1021,7 +1044,8 @@ ipcMain.handle("vm:screendump", async (_e, { id }) => {
     try {
       const buf = fs.readFileSync(ppm);
       // parse P6 PPM: "P6\n<w> <h>\n255\n<rgb bytes>"
-      let p = 0; const tok = () => { while (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d) p++; let s = p; while (buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
+      const isWs = (c) => c === 0x20 || c === 0x0a || c === 0x09 || c === 0x0d;
+      let p = 0; const tok = () => { while (p < buf.length && isWs(buf[p])) p++; let s = p; while (p < buf.length && !isWs(buf[p])) p++; return buf.slice(s, p).toString(); };
       if (tok() !== "P6") return { ok: false, error: "bad ppm" };
       const w = +tok(), h = +tok(); tok(); p++; // skip maxval + single whitespace
       const rgb = buf.slice(p); const bgra = Buffer.alloc(w * h * 4);
