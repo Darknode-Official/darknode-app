@@ -31,6 +31,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # No cert → don't attempt code signing (skips the step that fails on an
+          # unsigned build). When MAC_CSC_LINK is provided, that cert still signs.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
         run: npm run dist:mac
 
       - name: Upload build artifacts (always available from this run)
