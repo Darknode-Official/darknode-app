@@ -831,6 +831,48 @@ const sections = {
     };
   },
 
+  engagement(el) {
+    const tgt = targetVal();
+    el.innerHTML = `
+      <h1>Autonomous engagement</h1>
+      <p class="muted">One click: the AI runs recon against the target with its own tools — DNS, WHOIS, TLS, subdomains, port scan — then writes an engagement report. Authorized targets only.</p>
+      <div class="card" style="max-width:720px">
+        <label class="pb-f" style="display:block;margin-bottom:12px"><span>Target</span><input class="in" id="eng-target" value="${esc(tgt)}" placeholder="IP or domain" spellcheck="false" style="width:100%"></label>
+        <div class="muted" style="font-size:.78rem;margin-bottom:6px">Depth</div>
+        <div class="btns" id="eng-depth">
+          <button class="btn" data-depth="passive">Passive recon</button>
+          <button class="btn ghost" data-depth="scan">+ Port scan</button>
+          <button class="btn ghost" data-depth="active">+ Active checks</button>
+        </div>
+        <div class="run-bar" style="margin-top:16px"><button class="btn" id="eng-run" style="font-size:1rem;padding:11px 20px">▶ Run autonomous engagement</button></div>
+        <p class="muted" style="font-size:.76rem;margin-top:10px">Passive/enumeration by default. "+ Port scan" adds a top-ports scan; "+ Active checks" allows banner grabbing &amp; light probing. Nothing destructive.</p>
+      </div>
+      <div class="card" style="max-width:720px;margin-top:14px">
+        <div class="muted" style="font-size:.8rem;margin-bottom:6px">What it does</div>
+        <ol class="ed-steps" style="font-size:.85rem;color:var(--txt-2)"><li>Maps the target (dns_lookup + whois)</li><li>Inspects the TLS cert &amp; SANs</li><li>Enumerates subdomains (crt.sh)</li><li>Scans/probes per the chosen depth</li><li>Looks up CVEs for the software found</li><li>Writes a Markdown engagement report</li></ol>
+      </div>`;
+    let depth = "passive";
+    $("#eng-depth", el).onclick = (e) => { const b = e.target.closest("[data-depth]"); if (!b) return; depth = b.dataset.depth; el.querySelectorAll("#eng-depth button").forEach((x) => (x.className = "btn ghost")); b.className = "btn"; };
+    $("#eng-run", el).onclick = () => {
+      const t = $("#eng-target", el).value.trim(); if (!t) { $("#eng-target", el).focus(); return; }
+      const tb = $("#target"); if (tb) tb.value = t;   // sync the global TARGET bar
+      const depthTxt = depth === "passive"
+        ? "Use ONLY passive/enumeration tools (dns_lookup, whois, tls_cert, subdomains, cve_search, and http_request for banners). Do NOT port-scan."
+        : depth === "scan"
+        ? "Run passive recon AND a top-ports port scan (scan_ports) with service/version banners."
+        : "Run passive recon, a top-ports scan, and light active checks (http_request against the discovered services). Nothing destructive.";
+      askAgent(
+        "Act as an autonomous red-team operator and run a full security engagement on the AUTHORIZED target: " + t + ".\n\n" +
+        "Plan and execute this yourself, step by step, using your tools:\n" +
+        "1. dns_lookup + whois to map the target.\n" +
+        "2. tls_cert for the certificate and its SANs.\n" +
+        "3. subdomains to enumerate the attack surface.\n" +
+        "4. " + depthTxt + "\n" +
+        "5. cve_search for any software/versions you discover.\n\n" +
+        "Then write a concise Markdown ENGAGEMENT REPORT with: Executive Summary, Attack Surface, Findings (each with a risk rating + evidence), and Prioritized Next Steps (exact commands). Base everything strictly on the tool output — invent nothing. Begin now."
+      );
+    };
+  },
   update(el) {
     el.innerHTML = `
       <h1>Update</h1>
