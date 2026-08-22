@@ -23,7 +23,7 @@
     "start": "electron .",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:mac": "electron-builder --mac dmg zip --publish never",
     "dist": "electron-builder -mwl",
     "publish:release": "bash scripts/publish-release.sh"
   },
@@ -76,7 +76,7 @@
           ]
         }
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {
