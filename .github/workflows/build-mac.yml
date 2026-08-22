@@ -42,10 +42,15 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
-      - name: Attach the .dmg / .zip to the release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.dmg
-            dist/*.zip
+      - name: Publish the .dmg / .zip to the downloads release (sentinel-web)
+        # The website serves downloads from the sentinel-web "sentinel" release, so
+        # publish there. Needs a repo secret RELEASE_TOKEN = a PAT with repo access to
+        # SpartanKing18/sentinel-web. Without it, the build is still on this run's artifacts.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No RELEASE_TOKEN secret set — .dmg is on this run's artifacts only. Add a PAT with repo access to sentinel-web to auto-publish it to the downloads page."
+            exit 0
+          fi
+          gh release upload sentinel dist/*.dmg dist/*.zip --repo SpartanKing18/sentinel-web --clobber
