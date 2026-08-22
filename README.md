@@ -1,42 +1,75 @@
-# Sentinel (desktop)
+# Sentinel (desktop app)
 
-The powerful, downloadable version of Sentinel. Unlike the website, this native app
-has a Node backend, so it **actually runs tools** on your machine with live streamed
-output, and talks to your **local Ollama**.
+The Sentinel security console — a cross-platform Electron app: an AI assistant, a
+QEMU VM runner that can **build Sentinel OS**, a native port scanner, DNS/WHOIS/TLS
+recon, a code workbench, live terminals, MCP, and enterprise governance.
 
-- **Terminal** - a real interactive shell (xterm.js + node-pty): colors, TUIs, and
-  password/ssh prompts all work, not just streamed output.
-- **Tools** - install-check + one-click run for nmap, nikto, gobuster, sqlmap, nuclei,
-  and more (editable commands), plus in-app utilities (Base64, hashes, reverse-shell).
-- **Local AI** - chat with your Ollama models (`ollama serve` + `ollama pull ...`).
-- Dark/light themes + accent color.
+## Architecture
 
-Security: the renderer runs with `contextIsolation` and **no Node access** — it can
-only reach the main process through the small preload bridge (`preload.js`).
-
-## Run from source
 ```
-npm install
-npm start
+   Renderer  (renderer/app.js — the UI: dashboard, terminal, recon, VMs, ...)
+        |
+        |  contextBridge  ->  window.sentinel   (preload.js — the only exposed surface)
+        v
+   Main process  (main.js — IPC handlers)
+        |
+        +-- AI          streaming: Ollama (local) · Claude · OpenAI-compatible
+        +-- VM runner   QEMU + a Sentinel OS builder (pick a base, build, boot)
+        +-- Recon       scan · dns · whois · tls · subdomains · fuzz
+        +-- Dev         git / github · pty terminals · MCP client
+        +-- Governance  usage ledger · compliance bundle
+        +-- Bridges     Gmail OAuth (config-based) · net:get (SSRF-guarded fetch)
+        v
+   OS + network  (sandboxed through the main process; the renderer never touches them directly)
 ```
 
-Native module note: `node-pty` is compiled per platform. `npm install` runs
-`electron-builder install-app-deps` (postinstall) to rebuild it against Electron's
-ABI, and `electron-builder` rebuilds it again for each target when packaging.
+Security boundary: the renderer has no Node access. Everything privileged goes
+through `preload.js`'s `contextBridge` to typed IPC handlers in `main.js`, where
+inputs are validated (e.g. `net:get` blocks loopback/link-local/private hosts).
 
-## Build installers
-Each OS builds its own native installer (electron-builder):
-```
-npm run dist:linux   # -> dist/*.AppImage, dist/*.deb   (run on Linux)
-npm run dist:win     # -> dist/*.exe                     (run on Windows)
-npm run dist:mac     # -> dist/*.dmg                     (run on macOS)
-```
-You must build each target on that OS (macOS/Windows can't be produced from Linux
-reliably, and signing needs the native platform). The included GitHub Actions workflow
-(`.github/workflows/build.yml`) builds **all three** on a tagged push (`git tag v1.0.0
-&& git push --tags`) and uploads the installers as artifacts — the simplest way to get
-Linux/Windows/Mac builds without three machines.
+## Project Structure
 
-## Distribute
-Upload the built installers to a GitHub **Release**, then point the website's
-"Download the app" buttons at that release.
+```
+sentinel-app/
+├── main.js                    # Electron main: all IPC handlers (AI, VM, recon, git, pty, MCP)
+├── preload.js                 # contextBridge — the window.sentinel API surface
+├── renderer/
+│   └── app.js                 # UI: the section router + all views
+├── lib/                       # main-process modules (anthropic, governance, ...)
+├── oauth.config.example.json  # template for Gmail OAuth (real oauth.config.json is gitignored)
+├── package.json
+└── README.md
+```
+
+## Configuration
+
+Native Gmail OAuth loads its client id/secret from `oauth.config.json` (gitignored)
+or the `SENTINEL_GMAIL_CLIENT_ID` / `SENTINEL_GMAIL_CLIENT_SECRET` env vars — **no
+credentials in source**. Copy the template to start:
+
+```
+cp oauth.config.example.json oauth.config.json   # then fill in your Desktop client
+```
+
+## Installation
+
+```
+git clone https://github.com/SpartanKing18/sentinel-app
+cd sentinel-app && npm install
+npm start                      # run in development
+npm run build                  # package (.deb / AppImage / .exe)
+```
+
+## Status
+
+Active. The VM runner can build and boot a customized Sentinel OS on a chosen base
+(Debian / Ubuntu / Kali) directly from the app.
+
+## Security
+
+The app runs local tools, VMs, and shells. The renderer is sandboxed from the OS;
+all privileged actions cross a validated IPC boundary. Never commit `oauth.config.json`.
+
+## License
+
+See `LICENSE`.
