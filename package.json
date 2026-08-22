@@ -23,7 +23,7 @@
     "start": "electron .",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg",
+    "dist:mac": "electron-builder --mac dmg zip",
     "dist": "electron-builder -mwl",
     "publish:release": "bash scripts/publish-release.sh"
   },
@@ -59,10 +59,24 @@
       "icon": "build/icon.ico"
     },
     "mac": {
+      "category": "public.app-category.developer-tools",
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "category": "public.app-category.developer-tools"
+      "icon": "build/icon.icns"
     }
   },
   "dependencies": {
