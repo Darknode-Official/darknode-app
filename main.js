@@ -39,7 +39,7 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
       webviewTag: true,   // enables the built-in Browser section (<webview>)
     },
   });
@@ -51,6 +51,15 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
+// Constrain any web content (esp. the <webview> Browser tab): open real links in the
+// OS browser, deny every other window.open, and never let a guest webview gain Node.
+app.on("web-contents-created", (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    try { const p = new URL(url).protocol; if (p === "http:" || p === "https:") shell.openExternal(url); } catch (_) {}
+    return { action: "deny" };
+  });
+  contents.on("will-attach-webview", (_evt, wp) => { delete wp.preload; wp.nodeIntegration = false; wp.contextIsolation = true; wp.sandbox = true; });
+});
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (!isWin && process.platform !== "darwin") app.quit(); else if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
