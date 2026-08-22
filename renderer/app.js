@@ -3164,7 +3164,7 @@ function qa(sec, t, d) { return `<button class="qa" data-sec="${sec}"><div class
 let navTrail = [], curSec = "dash";
 // Per-section accent tint (does NOT override the user's chosen --acc; used for headings, active bar, page strip).
 const SECTION_HUE = {
-  recon: "#ff6b81", scanner: "#ff6b81", fuzzer: "#ff6b81", tools: "#ff6b81", playbooks: "#ff6b81", payloads: "#ff6b81", exploits: "#ff6b81", lab: "#ff6b81",
+  engagement: "#ff6b81", recon: "#ff6b81", scanner: "#ff6b81", fuzzer: "#ff6b81", tools: "#ff6b81", playbooks: "#ff6b81", payloads: "#ff6b81", exploits: "#ff6b81", lab: "#ff6b81",
   vms: "#38bdf8", cloud: "#38bdf8",
   http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
   arsenal: "#a78bfa", training: "#a78bfa",
@@ -3203,7 +3203,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["settings", "Settings"]];
+  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
