@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("sentinel", {
   winMax: () => ipcRenderer.invoke("win:maximize"),
   winClose: () => ipcRenderer.invoke("win:close"),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
-  noBootAnim: process.env.SENTINEL_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"),
+  noBootAnim: (() => { try { return process.env.SENTINEL_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),
   netGet: (opts) => ipcRenderer.invoke("net:get", opts),
