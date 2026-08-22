@@ -1,8 +1,8 @@
 name: Build macOS app
 
-# Builds the Sentinel desktop app for macOS (.dmg + .zip, Apple Silicon + Intel) on a
-# real macOS runner — the one artifact that can't be cross-built from Linux. Runs on a
-# published release (auto-attaches the .dmg) or on demand.
+# Builds the Sentinel desktop app for macOS on native runners — Intel (macos-13) and
+# Apple Silicon (macos-14) — so each arch is built natively (no cross-compile of the
+# node-pty native module). Runs on a published release or on demand.
 on:
   workflow_dispatch:
   release:
@@ -10,7 +10,13 @@ on:
 
 jobs:
   build-mac:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-13, arch: x64 }    # Intel
+          - { os: macos-14, arch: arm64 }   # Apple Silicon
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,41 +25,43 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Build macOS (.dmg + .zip, Intel + Apple Silicon)
-        # Signing + notarization are OPTIONAL — the build works unsigned. To ship a
-        # SIGNED + notarized .dmg, add these repo secrets (Settings → Secrets → Actions):
-        #   MAC_CSC_LINK               base64 of your Apple Developer ID .p12
-        #   MAC_CSC_KEY_PASSWORD       the .p12 password
-        #   APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID   (for notarization)
+      - name: Build ${{ matrix.arch }} (.dmg + .zip)
+        # Signing + notarization are OPTIONAL. With no cert we build UNSIGNED
+        # (--config.mac.identity=null skips the ad-hoc signing that errors on CI).
+        # Add these repo secrets to ship a SIGNED + notarized build:
+        #   MAC_CSC_LINK  MAC_CSC_KEY_PASSWORD  APPLE_ID  APPLE_APP_SPECIFIC_PASSWORD  APPLE_TEAM_ID
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # No cert → don't attempt code signing (skips the step that fails on an
-          # unsigned build). When MAC_CSC_LINK is provided, that cert still signs.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK != '' }}
-        run: npm run dist:mac
+        run: |
+          FLAGS="--${{ matrix.arch }} --publish never"
+          if [ -z "$CSC_LINK" ]; then
+            echo "No Apple cert → building UNSIGNED (add MAC_CSC_LINK to sign)."
+            FLAGS="$FLAGS --config.mac.identity=null"
+          else
+            echo "Apple cert present → signing + notarizing."
+          fi
+          npx electron-builder --mac dmg zip $FLAGS
 
-      - name: Upload build artifacts (always available from this run)
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sentinel-macos
+          name: sentinel-macos-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.zip
           if-no-files-found: error
 
       - name: Publish the .dmg / .zip to the downloads release (sentinel-web)
-        # The website serves downloads from the sentinel-web "sentinel" release, so
-        # publish there. Needs a repo secret RELEASE_TOKEN = a PAT with repo access to
-        # SpartanKing18/sentinel-web. Without it, the build is still on this run's artifacts.
+        # Needs a repo secret RELEASE_TOKEN = a PAT with repo access to sentinel-web.
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::No RELEASE_TOKEN secret set — .dmg is on this run's artifacts only. Add a PAT with repo access to sentinel-web to auto-publish it to the downloads page."
+            echo "::warning::No RELEASE_TOKEN — .dmg is on this run's artifacts only."
             exit 0
           fi
           gh release upload sentinel dist/*.dmg dist/*.zip --repo SpartanKing18/sentinel-web --clobber
