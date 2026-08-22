@@ -76,7 +76,8 @@
           ]
         }
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "identity": null
     }
   },
   "dependencies": {
