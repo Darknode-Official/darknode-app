@@ -1,0 +1,73 @@
+{
+  "name": "sentinel-app",
+  "version": "2.39.0",
+  "description": "Sentinel - desktop security console (runs tools, a live terminal, and local AI)",
+  "main": "main.js",
+  "author": "Sentinel <jawahar6k@gmail.com>",
+  "homepage": "https://sentinel-web-2hq9.onrender.com",
+  "license": "UNLICENSED",
+  "keywords": [
+    "security",
+    "pentest",
+    "electron",
+    "port-scanner",
+    "terminal",
+    "code-editor",
+    "local-ai",
+    "ollama",
+    "infosec",
+    "recon"
+  ],
+  "scripts": {
+    "postinstall": "electron-builder install-app-deps",
+    "start": "electron .",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist": "electron-builder -mwl",
+    "publish:release": "bash scripts/publish-release.sh"
+  },
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.sentinel.console",
+    "productName": "Sentinel",
+    "directories": {
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "lib/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "Sentinel <jawahar6k@gmail.com>",
+      "category": "Development",
+      "icon": "build/icons"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
+  }
+}
