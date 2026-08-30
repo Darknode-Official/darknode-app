@@ -4,3 +4,4 @@ dist/
 oauth.config.json
 *.log
 sentinel-cli/
+oauth.config.json
