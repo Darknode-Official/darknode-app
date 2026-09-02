@@ -3100,6 +3100,92 @@ const sections = {
       }; }
   },
 
+  api(el) {
+    const ENDPOINTS = [
+      { method: "POST", path: "/api/v1/scan/url", desc: "Scan a URL for vulnerabilities", req: '{"url":"https://target.com","depth":2}', res: '{"status":"complete","findings":[{"severity":"high","title":"SQL Injection"}]}' },
+      { method: "POST", path: "/api/v1/scan/code", desc: "Scan code for security issues", req: '{"code":"...","language":"javascript"}', res: '{"status":"complete","findings":[{"severity":"critical","title":"SQL Injection","line":1}]}' },
+      { method: "POST", path: "/api/v1/osint/domain", desc: "OSINT lookup on a domain", req: '{"domain":"example.com"}', res: '{"domain":"example.com","subdomains":["www","mail"],"technologies":["nginx"]}' },
+      { method: "POST", path: "/api/v1/osint/email", desc: "Check email in breach databases", req: '{"email":"user@example.com"}', res: '{"breached":true,"breaches":[{"name":"ExampleBreach","date":"2023-01-15"}]}' },
+      { method: "POST", path: "/api/v1/hash/crack", desc: "Identify and crack a hash", req: '{"hash":"5d41402abc4b2a76b9719d911017c592"}', res: '{"type":"MD5","cracked":true,"plaintext":"hello"}' },
+      { method: "POST", path: "/api/v1/encode", desc: "Encode or decode data", req: '{"data":"hello","operation":"encode","format":"base64"}', res: '{"result":"aGVsbG8=","format":"base64"}' },
+      { method: "POST", path: "/api/v1/generate/payload", desc: "Generate a reverse shell payload", req: '{"type":"reverse-shell","language":"python","lhost":"10.10.14.1","lport":4444}', res: '{"payload":"python3 -c ...","type":"reverse-shell"}' },
+      { method: "POST", path: "/api/v1/ai/ask", desc: "Ask the security AI a question", req: '{"question":"How do I test for blind SQLi?"}', res: '{"answer":"Blind SQLi can be detected using...","sources":["OWASP"]}' },
+    ];
+    const target = document.getElementById("target");
+    const host = (target && target.value.trim()) || "localhost";
+    el.innerHTML = `
+      <h2>Sentinel API</h2>
+      <p class="dim">Run the API server locally for unlimited, private access. All the same capabilities as the cloud API, running on your machine.</p>
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-h">Start the API Server</div>
+        <pre class="code-block" style="margin:0"><code># Start on default port 8080
+sentinel api start
+
+# Custom port
+sentinel api start --port 9090
+
+# The server runs until you stop it
+sentinel api stop</code></pre>
+        <button class="btn sm" id="apiStartBtn" style="margin-top:10px">Start API server</button>
+        <span class="dim" id="apiStartMsg" style="margin-left:10px"></span>
+      </div>
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-h">Quick Test</div>
+        <pre class="code-block" style="margin:0"><code>curl -X POST http://${esc(host)}:8080/api/v1/scan/url \\
+  -H "Content-Type: application/json" \\
+  -d '{"url": "https://target.com"}'</code></pre>
+      </div>
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-h">Endpoints</div>
+        <div id="apiEpList">
+          ${ENDPOINTS.map((ep, i) => `
+            <div class="api-ep" data-idx="${i}" style="border:1px solid var(--line,#1b2333);border-radius:6px;margin-bottom:8px;overflow:hidden">
+              <div class="api-ep-hdr" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--bg2,#0d1117)">
+                <span style="font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(0,200,150,.15);color:#0c8">POST</span>
+                <code style="font-size:.82rem">${esc(ep.path)}</code>
+                <span class="dim" style="margin-left:auto;font-size:.78rem">${esc(ep.desc)}</span>
+                <span class="api-ep-tog" style="font-weight:700;color:var(--dim,#888)">+</span>
+              </div>
+              <div class="api-ep-body" style="display:none;padding:14px;border-top:1px solid var(--line,#1b2333)">
+                <div style="font-size:.75rem;font-weight:600;color:var(--dim,#888);margin-bottom:4px">REQUEST</div>
+                <pre class="code-block" style="margin:0 0 10px"><code>${esc(ep.req)}</code></pre>
+                <div style="font-size:.75rem;font-weight:600;color:var(--dim,#888);margin-bottom:4px">RESPONSE</div>
+                <pre class="code-block" style="margin:0"><code>${esc(ep.res)}</code></pre>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h">Cloud API</div>
+        <p class="dim" style="font-size:.85rem">The cloud-hosted API is available at <code>https://sentinel-api.onrender.com</code>. Manage your API key and view usage on the Sentinel website under the API tab.</p>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn ghost sm" id="apiWebBtn">Open API dashboard</button>
+        </div>
+      </div>`;
+    el.querySelectorAll(".api-ep").forEach(ep => {
+      const hdr = ep.querySelector(".api-ep-hdr");
+      const body = ep.querySelector(".api-ep-body");
+      const tog = ep.querySelector(".api-ep-tog");
+      if (hdr && body) hdr.onclick = () => {
+        const open = body.style.display !== "none";
+        body.style.display = open ? "none" : "block";
+        if (tog) tog.textContent = open ? "+" : "-";
+      };
+    });
+    const startBtn = $("#apiStartBtn", el);
+    if (startBtn) startBtn.onclick = async () => {
+      const msg = $("#apiStartMsg", el);
+      if (msg) msg.textContent = "Starting...";
+      try {
+        await S.exec("sentinel", ["api", "start", "--port", "8080"]);
+        if (msg) msg.textContent = "API server running on port 8080";
+      } catch (e) { if (msg) msg.textContent = "Error: " + (e.message || e); }
+    };
+    const webBtn = $("#apiWebBtn", el);
+    if (webBtn) webBtn.onclick = () => { try { S.openExternal("https://sentinel-web.onrender.com/#api"); } catch (_) {} };
+  },
+
   docs(el) {
     const nexusCmds = [
       ["Engines & models", "/engine claude|ollama|opencode · /model · /models · /fallback · /cowork strong weak"],
@@ -3203,7 +3289,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["settings", "Settings"]];
+  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
