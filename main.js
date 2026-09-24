@@ -16,6 +16,7 @@ const { toAnthropicBody, anthropicDelta, usageOf } = require("./lib/anthropic");
 const { resolveOperator } = require("./lib/identity");
 const { appendUsage, loadUsage, summarize, renderReport } = require("./lib/usage");
 const { buildBundle, verifyBundle, renderBundleMd } = require("./lib/compliance");
+const toolkit = require("./lib/toolkit");
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -865,6 +866,36 @@ ipcMain.handle("fs:read", async (_e, file) => {
 ipcMain.handle("fs:write", async (_e, { file, data }) => {
   try { await fs.promises.writeFile(file, data, "utf8"); return { ok: true }; }
   catch (e) { return { ok: false, error: e.message }; }
+});
+// Native file forensics — real hashes/entropy/strings/type over the file bytes.
+// Something the web app can only fake; here it runs on the actual file.
+ipcMain.handle("forensics:analyze", async (_e, file) => {
+  try {
+    const st = await fs.promises.stat(file);
+    if (!st.isFile()) return { ok: false, error: "not a regular file" };
+    if (st.size > 64e6) return { ok: false, error: "file too large (" + Math.round(st.size / 1e6) + " MB, max 64 MB)" };
+    const buf = await fs.promises.readFile(file);
+    const head = buf.subarray(0, 4096);
+    const strings = toolkit.extractStrings(buf, 5).slice(0, 500);
+    return {
+      ok: true,
+      path: file,
+      name: path.basename(file),
+      size: st.size,
+      modified: st.mtime.toISOString(),
+      hashes: {
+        md5: toolkit.md5(buf),
+        sha1: toolkit.sha1(buf),
+        sha256: toolkit.sha256(buf),
+        crc32: toolkit.crc32Hex(buf),
+      },
+      entropy: toolkit.entropyVerdict(buf),
+      type: toolkit.detectFileType(buf),
+      hexdump: toolkit.hexdump(head),
+      stringCount: strings.length,
+      strings,
+    };
+  } catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle("fs:mkfile", async (_e, { dir, name }) => {
   try { const full = path.join(dir, name); await fs.promises.writeFile(full, "", { flag: "wx" }); return { ok: true, path: full }; }

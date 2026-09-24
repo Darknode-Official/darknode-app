@@ -898,6 +898,63 @@ let _kevCache = null; // CISA KEV catalog, fetched once per session
 const timeAgo = (ms) => { const s = (Date.now() - ms) / 1000; if (isNaN(s)) return ""; if (s < 3600) return Math.max(0, Math.floor(s / 60)) + "m"; if (s < 86400) return Math.floor(s / 3600) + "h"; return Math.floor(s / 86400) + "d"; };
 
 const sections = {
+  // Native file forensics — hashes/entropy/strings/type computed over the real
+  // file bytes in the main process (window.darknode.forensicsAnalyze).
+  forensics(el) {
+    const fmtBytes = (n) => { if (n < 1024) return n + " B"; const u = ["KB", "MB", "GB"]; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1); return n.toFixed(1) + " " + u[i]; };
+    el.innerHTML = `
+      <div class="page-head"><h1>File forensics</h1><p class="muted">Inspect any file on this machine — cryptographic hashes, Shannon entropy, magic-byte type, printable strings and a hex view. Runs natively over the real bytes; nothing leaves your device.</p></div>
+      <div class="run-bar" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn" id="fx-pick">Choose file…</button>
+        <input class="in" id="fx-path" placeholder="…or paste an absolute file path" spellcheck="false" style="flex:1;min-width:220px">
+        <button class="btn ghost" id="fx-run">Analyze</button>
+      </div>
+      <div id="fx-out"></div>`;
+    const out = $("#fx-out", el), pathIn = $("#fx-path", el);
+    const kv = (k, v, mono) => `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--line,#1b2333)"><span class="muted" style="min-width:120px">${esc(k)}</span><span style="flex:1;${mono ? "font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem;word-break:break-all" : ""}">${v}</span></div>`;
+    const copyBtn = (val) => `<button class="btn ghost sm fx-copy" data-copy="${esc(val)}" title="Copy" style="padding:1px 8px">copy</button>`;
+    async function analyze(file) {
+      if (!file) return;
+      out.innerHTML = `<p class="muted">Analyzing ${esc(file)} …</p>`;
+      let r; try { r = await S.forensicsAnalyze(file); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+      if (!r || !r.ok) { out.innerHTML = `<p style="color:#ff6b6b">Could not analyze: ${esc((r && r.error) || "unknown error")}</p>`; return; }
+      const e = r.entropy || {}, t = r.type || {};
+      const pct = Math.max(0, Math.min(100, Math.round(((e.bitsPerByte || 0) / 8) * 100)));
+      const bar = `<div style="background:var(--line,#1b2333);border-radius:4px;height:10px;overflow:hidden;max-width:340px"><div style="height:100%;width:${pct}%;background:var(--sec,var(--acc,#2ee6a6))"></div></div>`;
+      const strTop = (r.strings || []).slice(0, 200).map((s) => `<div style="display:flex;gap:10px"><span class="muted" style="min-width:74px;text-align:right">${s.offset.toString(16).padStart(6, "0")}</span><span style="word-break:break-all">${esc(s.text)}</span></div>`).join("");
+      out.innerHTML = `
+        <div style="display:grid;gap:14px;grid-template-columns:1fr">
+          <section style="border:1px solid var(--line,#1b2333);border-radius:8px;padding:14px;background:var(--card,#0e1320)">
+            <h3 style="margin:0 0 8px">Overview</h3>
+            ${kv("Name", esc(r.name))}
+            ${kv("Path", esc(r.path), true)}
+            ${kv("Size", fmtBytes(r.size) + ' <span class="muted">(' + r.size.toLocaleString() + " bytes)</span>")}
+            ${kv("Modified", esc(r.modified))}
+            ${kv("Detected type", esc(t.desc || "unknown") + (t.ext ? ' <span class="muted">.' + esc(t.ext) + " · " + esc(t.mime) + "</span>" : "") + (t.matched ? "" : ' <span class="muted">(heuristic)</span>'))}
+            ${kv("Entropy", (e.bitsPerByte != null ? e.bitsPerByte : "?") + " bits/byte " + bar + '<div class="muted" style="margin-top:4px">' + esc(e.verdict || "") + "</div>")}
+          </section>
+          <section style="border:1px solid var(--line,#1b2333);border-radius:8px;padding:14px;background:var(--card,#0e1320)">
+            <h3 style="margin:0 0 8px">Hashes</h3>
+            ${kv("MD5", esc(r.hashes.md5) + " " + copyBtn(r.hashes.md5), true)}
+            ${kv("SHA-1", esc(r.hashes.sha1) + " " + copyBtn(r.hashes.sha1), true)}
+            ${kv("SHA-256", esc(r.hashes.sha256) + " " + copyBtn(r.hashes.sha256), true)}
+            ${kv("CRC-32", esc(r.hashes.crc32) + " " + copyBtn(r.hashes.crc32), true)}
+          </section>
+          <section style="border:1px solid var(--line,#1b2333);border-radius:8px;padding:14px;background:var(--card,#0e1320)">
+            <h3 style="margin:0 0 8px">Hex view <span class="muted">(first 4 KB)</span></h3>
+            <pre style="margin:0;max-height:320px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.45">${esc(r.hexdump || "")}</pre>
+          </section>
+          <section style="border:1px solid var(--line,#1b2333);border-radius:8px;padding:14px;background:var(--card,#0e1320)">
+            <h3 style="margin:0 0 8px">Strings <span class="muted">(${r.stringCount}, min length 5${r.stringCount > 200 ? "; showing 200" : ""})</span></h3>
+            <div style="max-height:320px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.5">${strTop || '<span class="muted">none</span>'}</div>
+          </section>
+        </div>`;
+      out.querySelectorAll(".fx-copy").forEach((b) => { b.onclick = () => { try { navigator.clipboard.writeText(b.dataset.copy); _toast("Copied"); } catch (_) {} }; });
+    }
+    $("#fx-pick", el).onclick = async () => { const f = await S.openFile(); if (f) { pathIn.value = f; analyze(f); } };
+    $("#fx-run", el).onclick = () => analyze(pathIn.value.trim());
+    pathIn.onkeydown = (ev) => { if (ev.key === "Enter") analyze(pathIn.value.trim()); };
+  },
   browser(el) {
     el.innerHTML = `
       <div style="display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:420px">
@@ -3360,7 +3417,7 @@ let navTrail = [], curSec = "dash";
 const SECTION_HUE = {
   engagement: "#ff6b81", recon: "#ff6b81", scanner: "#ff6b81", fuzzer: "#ff6b81", tools: "#ff6b81", playbooks: "#ff6b81", payloads: "#ff6b81", exploits: "#ff6b81", lab: "#ff6b81",
   vms: "#38bdf8", cloud: "#38bdf8",
-  http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
+  http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", forensics: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
   arsenal: "#a78bfa", training: "#a78bfa",
   agent: "#c26cff", ai: "#c26cff",
 };
@@ -3397,7 +3454,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
