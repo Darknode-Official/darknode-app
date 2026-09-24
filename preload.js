@@ -1,7 +1,7 @@
 // Secure bridge: the only surface the renderer can touch.
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("sentinel", {
+contextBridge.exposeInMainWorld("darknode", {
   sysinfo: () => ipcRenderer.invoke("sysinfo"),
   run: (id, cmd, cwd) => ipcRenderer.invoke("run", { id, cmd, cwd }),
   kill: (id) => ipcRenderer.invoke("kill", id),
@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("sentinel", {
   winMax: () => ipcRenderer.invoke("win:maximize"),
   winClose: () => ipcRenderer.invoke("win:close"),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
-  noBootAnim: (() => { try { return process.env.SENTINEL_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
+  noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),
   netGet: (opts) => ipcRenderer.invoke("net:get", opts),
@@ -47,8 +47,6 @@ contextBridge.exposeInMainWorld("sentinel", {
   vmDeps: () => ipcRenderer.invoke("vm:deps"),
   vmList: () => ipcRenderer.invoke("vm:list"),
   vmCreate: (opts) => ipcRenderer.invoke("vm:create", opts),
-  vmBuildSentinel: (opts) => ipcRenderer.invoke("vm:buildSentinel", opts),
-  onVmBuildLog: (cb) => { const h = (_e, d) => cb(d); ipcRenderer.on("vm:buildLog", h); return () => ipcRenderer.removeListener("vm:buildLog", h); },
   vmUpdate: (id, patch) => ipcRenderer.invoke("vm:update", { id, patch }),
   vmDelete: (id, deleteDisk) => ipcRenderer.invoke("vm:delete", { id, deleteDisk }),
   vmStart: (id) => ipcRenderer.invoke("vm:start", { id }),
@@ -98,7 +96,7 @@ contextBridge.exposeInMainWorld("sentinel", {
   ptyResize: (id, cols, rows) => ipcRenderer.invoke("pty:resize", { id, cols, rows }),
   ptyKill: (id) => ipcRenderer.invoke("pty:kill", { id }),
   onPtyData: (cb) => ipcRenderer.on("pty:data", (_e, d) => cb(d)),
-  onPtyExit: (cb) => ipcRenderer.on("pty:exit", () => cb()),
+  onPtyExit: (cb) => ipcRenderer.on("pty:exit", (_e, d) => cb(d)),
   mcpConnect: (cfg) => ipcRenderer.invoke("mcp:connect", cfg),
   mcpList: () => ipcRenderer.invoke("mcp:list"),
   mcpCall: (server, tool, args) => ipcRenderer.invoke("mcp:call", { server, tool, args }),

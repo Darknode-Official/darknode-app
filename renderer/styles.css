@@ -1,5 +1,5 @@
 /* ============================================================
-   Sentinel — design system
+   Darknode — design system
    ============================================================ */
 :root{
   /* runtime-overridable accent (set by applyAccent) */
@@ -96,6 +96,8 @@ body{
 .nav-item .ni{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;opacity:.85;transition:opacity .16s}
 .nav-item:hover{background:color-mix(in srgb,var(--card2) 70%,transparent);color:var(--txt)}
 .nav-item:hover .ni{opacity:1}
+.nav-item:not(.active):hover::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+  width:2px;height:12px;border-radius:0 2px 2px 0;background:var(--line-2)}
 .nav-item.active{background:var(--acc-soft);color:var(--acc);font-weight:600}
 .nav-item.active .ni{opacity:1}
 .nav-item.active::before{content:"";position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:3px;height:18px;border-radius:0 3px 3px 0;background:var(--grad-acc)}
@@ -242,6 +244,7 @@ select.f{cursor:pointer}
 .scan-table td{padding:7px 10px;border-bottom:1px solid var(--line)}
 .scan-table td.ok{color:var(--ok);font-weight:700}
 .scan-table tr:last-child td{border-bottom:none}
+.scan-table tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--card2) 50%,transparent)}
 .hdr-row{display:flex;align-items:baseline;gap:9px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.82rem}
 .hdr-row:last-child{border-bottom:none}
 .hdr-row strong{flex:none;min-width:150px}
@@ -257,8 +260,9 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
   display:flex;align-items:flex-start;justify-content:center;padding-top:11vh;backdrop-filter:blur(6px);animation:fade .16s var(--ease)}
 .pal-box{width:min(620px,94vw);background:color-mix(in srgb,var(--card) 88%,transparent);
   border:1px solid var(--line-2);border-radius:var(--r-lg);box-shadow:var(--sh-pop);overflow:hidden;backdrop-filter:blur(20px)}
-.pal-in{width:100%;border:none;border-bottom:1px solid var(--line);background:transparent;color:var(--txt);
-  font-family:inherit;font-size:1.02rem;padding:16px 18px;outline:none}
+.pal-in{width:100%;border:none;border-bottom:1px solid var(--line);color:var(--txt);
+  font-family:inherit;font-size:1.02rem;padding:16px 18px 16px 42px;outline:none;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236f88ab' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cline x1='10.2' y1='10.2' x2='14' y2='14'/%3E%3C/svg%3E") no-repeat 16px center}
 .pal-list{max-height:52vh;overflow-y:auto;padding:7px}
 .pal-item{display:flex;align-items:baseline;gap:12px;padding:10px 12px;border-radius:9px;cursor:pointer}
 .pal-item.sel{background:var(--acc-soft);box-shadow:inset 0 0 0 1px var(--acc-line)}
@@ -587,7 +591,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .crumb:hover{color:var(--acc);background:var(--acc-soft)}
 .crumb.cur{color:var(--txt);font-weight:600;cursor:default}
 .crumb-sep{color:var(--mut);opacity:.6}
-.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);z-index:200;background:var(--card);border:1px solid var(--acc);color:var(--txt);padding:10px 16px;border-radius:10px;font-size:.85rem;box-shadow:var(--sh-pop);opacity:0;transition:opacity .25s var(--ease),transform .25s var(--ease);max-width:90vw}
+.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);z-index:200;background:var(--card);border:1px solid var(--acc);border-left:3px solid var(--acc);color:var(--txt);padding:10px 16px;border-radius:10px;font-size:.85rem;box-shadow:var(--sh-pop);opacity:0;transition:opacity .25s var(--ease),transform .25s var(--ease);max-width:90vw}
 .toast.in{opacity:1;transform:translate(-50%,0)}
 
 /* VM console: hide the img until it has a frame (no broken-image glyph) */
@@ -647,6 +651,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 /* header hairline glow + snappier page transition */
 .apphead{box-shadow:0 1px 0 color-mix(in srgb,var(--acc) 14%,transparent),0 6px 20px -18px #000}
 #page{animation:fade .16s var(--ease)}
+#page:empty{min-height:320px}
 
 /* chips get a subtle gradient */
 .chip{background:linear-gradient(180deg,var(--acc-soft),transparent)}
@@ -769,11 +774,16 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .side-collapse:hover{color:var(--acc);border-color:var(--acc-line);background:var(--acc-soft)}
 .side-collapse svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
 
+/* sidebar children: fade transition for smooth collapse */
+.brand-name,.brand-tag,.nav-item span,.nav-group-h,.side-foot #side-foot{
+  transition:opacity .15s var(--ease),max-width .2s var(--ease),padding .18s var(--ease);
+  max-width:180px;opacity:1;overflow:hidden;white-space:nowrap}
 /* collapsed rail */
 .nav-collapsed .sidebar{width:62px;padding:16px 8px 12px;transition:width .18s var(--ease)}
 .sidebar{transition:width .18s var(--ease)}
 .nav-collapsed .brand-name,.nav-collapsed .brand-tag,.nav-collapsed .nav-item span,
-.nav-collapsed .nav-group-h,.nav-collapsed .side-foot #side-foot{display:none}
+.nav-collapsed .nav-group-h,.nav-collapsed .side-foot #side-foot{
+  opacity:0;max-width:0;padding-left:0;padding-right:0;pointer-events:none}
 .nav-collapsed .brand{justify-content:center;padding:6px 0 16px;gap:0}
 .nav-collapsed .side-collapse{margin-left:0;position:absolute;top:14px;right:-13px;background:var(--card);z-index:5}
 .nav-collapsed .nav-item{justify-content:center;padding:9px 0}
@@ -909,6 +919,14 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .apphead{backdrop-filter:blur(10px) saturate(1.15)}
 *::-webkit-scrollbar{width:9px;height:9px}
 *::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--acc) 50%,var(--line-2));background-clip:padding-box}
+
+/* sidebar scrollbar: thinner track, hidden until sidebar is hovered */
+.sidebar::-webkit-scrollbar{width:6px}
+.sidebar::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb{background:transparent;border:none;border-radius:4px}
+.sidebar:hover::-webkit-scrollbar-thumb{background:var(--surface-3)}
+.sidebar:hover::-webkit-scrollbar-thumb:hover{background:var(--line-2)}
+
 @media (prefers-reduced-motion:reduce){.card:hover,.nav-item:hover{transform:none}}
 
 /* docs section */
