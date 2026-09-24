@@ -59,6 +59,8 @@ group("forensics: detectFileType", () => {
   });
   test("text vs unknown binary", () => {
     assert.equal(F.detectFileType("hello world\n").ext, "txt");
-    assert.equal(F.detectFileType([0x00, 0x01, 0x02, 0xfe, 0xff]).mime, "application/octet-stream");
+    assert.equal(F.detectFileType("Darknode — desktop app · ünïcödé ✓\n").ext, "txt"); // UTF-8 text
+    assert.equal(F.detectFileType([0x00, 0x01, 0x02, 0xfe, 0xff]).mime, "application/octet-stream"); // NUL -> binary
+    assert.equal(F.detectFileType([0xde, 0xad, 0xbe, 0xef, 0x01, 0x7f, 0x80, 0x99]).ext, null); // invalid utf-8 binary
   });
 });

@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld("darknode", {
   onVmExit: (cb) => ipcRenderer.on("vm:exit", (_e, d) => cb(d)),
   fsList: (dir) => ipcRenderer.invoke("fs:list", dir),
   fsRead: (file) => ipcRenderer.invoke("fs:read", file),
+  forensicsAnalyze: (file) => ipcRenderer.invoke("forensics:analyze", file),
   fsWrite: (file, data) => ipcRenderer.invoke("fs:write", { file, data }),
   fsMkfile: (dir, name) => ipcRenderer.invoke("fs:mkfile", { dir, name }),
   dnsLookup: (host) => ipcRenderer.invoke("dns:lookup", host),
