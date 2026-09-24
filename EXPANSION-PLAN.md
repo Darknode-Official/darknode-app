@@ -15,7 +15,14 @@ multi-phase program — no filler is ever added to hit a number.
 - No emojis in UI; no `prompt/alert/confirm` (custom modals); privileged work
   always crosses the validated IPC boundary in `main.js`.
 
-## Phase 1 — Tested core toolkit (`lib/toolkit/`) + harness  ← IN PROGRESS
+## Progress
+- Phase 1 — DONE (commit "Phase 1: tested pure security toolkit"): 5 modules +
+  barrel + harness, 67 tests passing.
+- Phase 2 — DONE (commit "Phase 2: native File Forensics section"): forensics
+  IPC + renderer section over real file bytes.
+- Next: Phase 3 (workspaces) — or extend Phase 2 (PCAP summary, cert inspector).
+
+## Phase 1 — Tested core toolkit (`lib/toolkit/`) + harness  ✓ DONE
 Factor the inline renderer helpers into pure, tested CommonJS modules and expand
 them into a real library. Add a zero-dependency Node test harness + `npm test`.
 - `encoding.js` — base64/32/58, hex, url, html entities, rot-n, morse, ascii85.
