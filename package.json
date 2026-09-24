@@ -1,10 +1,10 @@
 {
-  "name": "sentinel-app",
+  "name": "darknode-app",
   "version": "2.40.0",
-  "description": "Sentinel - desktop security console (runs tools, a live terminal, and local AI)",
+  "description": "Darknode — desktop security console (runs tools, a live terminal, and local AI)",
   "main": "main.js",
-  "author": "Sentinel <jawahar6k@gmail.com>",
-  "homepage": "https://sentinel-web-2hq9.onrender.com",
+  "author": "Darknode <contact@darknode.ai>",
+  "homepage": "https://darknode.ai",
   "license": "UNLICENSED",
   "keywords": [
     "security",
@@ -32,8 +32,8 @@
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "app.sentinel.console",
-    "productName": "Sentinel",
+    "appId": "ai.darknode.console",
+    "productName": "Darknode",
     "directories": {
       "buildResources": "build"
     },
@@ -48,7 +48,7 @@
         "AppImage",
         "deb"
       ],
-      "maintainer": "Sentinel <jawahar6k@gmail.com>",
+      "maintainer": "Darknode <contact@darknode.ai>",
       "category": "Development",
       "icon": "build/icons"
     },

@@ -1,12 +1,12 @@
 # Scope, ethics, and responsible use
 
-Sentinel packages security tooling — port scanning, payload/reverse-shell
+Darknode packages security tooling — port scanning, payload/reverse-shell
 generators, recon utilities, and links to offensive tools — into one console.
 That is powerful, and it comes with responsibility.
 
 ## The one hard rule
 
-**Only use Sentinel against systems you own or have explicit, written permission
+**Only use Darknode against systems you own or have explicit, written permission
 to test.** Unauthorized scanning, exploitation, or access is illegal in most
 places and can cause real harm.
 
@@ -32,7 +32,7 @@ Use purpose-built labs instead of live systems:
 
 ## Reporting a problem
 
-Found a security issue in Sentinel itself? Contact the maintainer privately rather
+Found a security issue in Darknode itself? Contact the maintainer privately rather
 than filing a public issue with exploit details.
 
 ---

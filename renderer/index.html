@@ -2,8 +2,9 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.github.com https://gmail.googleapis.com https://www.googleapis.com">
-  <title>Sentinel</title>
+  <title>Darknode</title>
   <link rel="stylesheet" href="vendor/xterm.css">
   <link rel="stylesheet" href="vendor/cm/codemirror.css">
   <link rel="stylesheet" href="vendor/cm/material-darker.css">
@@ -11,6 +12,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <noscript>JavaScript is required to run Darknode.</noscript>
   <div id="bootscreen" aria-hidden="true">
     <canvas class="boot-rain" id="bootrain"></canvas>
     <div class="boot-grid"></div>
@@ -18,16 +20,16 @@
     <div class="boot-scan"></div>
     <div class="boot-inner">
       <div class="boot-ring"></div><div class="boot-ring r2"></div>
-      <div class="boot-logo glitch" data-text="&gt;_ SENTINEL">&gt;_ SENTINEL</div>
+      <div class="boot-logo glitch" data-text="&gt;_ DARKNODE">&gt;_ DARKNODE</div>
       <div class="boot-tag">S E C U R I T Y &nbsp; C O N S O L E</div>
-      <div class="boot-sys" id="bootsys">initializing&hellip;</div>
+      <div class="boot-sys" id="bootsys" role="status" aria-live="polite">initializing&hellip;</div>
       <div class="boot-lines">
         <div style="--d:.25s">[<span class="bok">OK</span>] mounting local toolchain &amp; arsenal</div>
         <div style="--d:.50s">[<span class="bok">OK</span>] arming exploit, payload &amp; vuln databases</div>
         <div style="--d:.75s">[<span class="bok">OK</span>] spinning up VM labs &amp; practice targets</div>
         <div style="--d:1.00s">[<span class="bok">OK</span>] connecting Nexus AI coder (local models)</div>
         <div style="--d:1.25s">[<span class="bok">OK</span>] establishing secure console</div>
-        <div style="--d:1.55s" class="boot-go">sentinel@local:~$ <span class="boot-cur">&#9608;</span></div>
+        <div style="--d:1.55s" class="boot-go">darknode@local:~$ <span class="boot-cur">&#9608;</span></div>
       </div>
       <div class="boot-barwrap"><div class="boot-bar"><span></span></div><span class="boot-pct" id="bootpct">0%</span></div>
       <div class="boot-granted" data-text="ACCESS GRANTED">ACCESS GRANTED</div>
@@ -36,16 +38,16 @@
     <div class="boot-flash"></div>
   </div>
   <div id="titlebar">
-    <div class="tb-drag"><img class="tb-ico" src="icon.png" alt=""><span class="tb-title">Sentinel</span><span class="tb-sub">security console</span></div>
+    <div class="tb-drag"><img class="tb-ico" src="icon.png" alt=""><span class="tb-title">Darknode</span><span class="tb-sub">security console</span></div>
     <div class="tb-ctrls">
-      <button class="tb-btn" id="win-min" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>
-      <button class="tb-btn" id="win-max" title="Maximize" aria-label="Maximize"><svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
-      <button class="tb-btn close" id="win-close" title="Close" aria-label="Close"><svg viewBox="0 0 12 12"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
+      <button class="tb-btn" id="win-min" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 12 12" aria-hidden="true"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>
+      <button class="tb-btn" id="win-max" title="Maximize" aria-label="Maximize"><svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg></button>
+      <button class="tb-btn close" id="win-close" title="Close" aria-label="Close"><svg viewBox="0 0 12 12" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg></button>
     </div>
   </div>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><img class="brand-logo" src="icon.png" alt=""><span class="brand-name">Sentinel</span><span class="brand-tag">console</span>
+      <div class="brand"><img class="brand-logo" src="icon.png" alt=""><span class="brand-name">Darknode</span><span class="brand-tag">console</span>
         <button id="sidebar-toggle" class="side-collapse" title="Collapse sidebar" aria-label="Collapse sidebar"><svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg></button></div>
       <nav id="nav">
         <div class="nav-group">
@@ -112,7 +114,7 @@
         <button class="btn ghost sm" id="palette-btn" title="Command palette (Ctrl+K)">Search <kbd>Ctrl K</kbd></button>
       </div>
       <div id="crumbs" class="crumbs"></div>
-      <div id="page"></div>
+      <div id="page"><div class="empty" style="min-height:200px"><div class="skeleton" style="width:200px;height:24px;margin-bottom:12px"></div><div class="skeleton" style="width:300px;height:14px"></div></div></div>
       <footer id="statusbar">
         <span class="sb-item" id="sb-host"><span class="dot-live"></span><span id="sb-hosttxt">—</span></span>
         <span class="sb-item" id="sb-sec">—</span>

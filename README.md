@@ -1,7 +1,7 @@
-# Sentinel (desktop app)
+# Darknode (desktop app)
 
-The Sentinel security console — a cross-platform Electron app: an AI assistant, a
-QEMU VM runner that can **build Sentinel OS**, a native port scanner, DNS/WHOIS/TLS
+The Darknode security console — a cross-platform Electron app: an AI assistant, a
+QEMU VM runner that can **build Darknode OS**, a native port scanner, DNS/WHOIS/TLS
 recon, a code workbench, live terminals, MCP, and enterprise governance.
 
 ## Architecture
@@ -9,12 +9,12 @@ recon, a code workbench, live terminals, MCP, and enterprise governance.
 ```
    Renderer  (renderer/app.js — the UI: dashboard, terminal, recon, VMs, ...)
         |
-        |  contextBridge  ->  window.sentinel   (preload.js — the only exposed surface)
+        |  contextBridge  ->  window.darknode   (preload.js — the only exposed surface)
         v
    Main process  (main.js — IPC handlers)
         |
         +-- AI          streaming: Ollama (local) · Claude · OpenAI-compatible
-        +-- VM runner   QEMU + a Sentinel OS builder (pick a base, build, boot)
+        +-- VM runner   QEMU + a Darknode OS builder (pick a base, build, boot)
         +-- Recon       scan · dns · whois · tls · subdomains · fuzz
         +-- Dev         git / github · pty terminals · MCP client
         +-- Governance  usage ledger · compliance bundle
@@ -30,9 +30,9 @@ inputs are validated (e.g. `net:get` blocks loopback/link-local/private hosts).
 ## Project Structure
 
 ```
-sentinel-app/
+darknode-app/
 ├── main.js                    # Electron main: all IPC handlers (AI, VM, recon, git, pty, MCP)
-├── preload.js                 # contextBridge — the window.sentinel API surface
+├── preload.js                 # contextBridge — the window.darknode API surface
 ├── renderer/
 │   └── app.js                 # UI: the section router + all views
 ├── lib/                       # main-process modules (anthropic, governance, ...)
@@ -44,7 +44,7 @@ sentinel-app/
 ## Configuration
 
 Native Gmail OAuth loads its client id/secret from `oauth.config.json` (gitignored)
-or the `SENTINEL_GMAIL_CLIENT_ID` / `SENTINEL_GMAIL_CLIENT_SECRET` env vars — **no
+or the `DARKNODE_GMAIL_CLIENT_ID` / `DARKNODE_GMAIL_CLIENT_SECRET` env vars — **no
 credentials in source**. Copy the template to start:
 
 ```
@@ -54,15 +54,15 @@ cp oauth.config.example.json oauth.config.json   # then fill in your Desktop cli
 ## Installation
 
 ```
-git clone https://github.com/SpartanKing18/sentinel-app
-cd sentinel-app && npm install
+git clone https://github.com/SpartanKing18/darknode-app
+cd darknode-app && npm install
 npm start                      # run in development
 npm run build                  # package (.deb / AppImage / .exe)
 ```
 
 ## Status
 
-Active. The VM runner can build and boot a customized Sentinel OS on a chosen base
+Active. The VM runner can build and boot a customized Darknode OS on a chosen base
 (Debian / Ubuntu / Kali) directly from the app.
 
 ## Security

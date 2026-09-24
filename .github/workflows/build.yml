@@ -24,7 +24,7 @@ jobs:
         run: npm run dist:mac
       - uses: actions/upload-artifact@v4
         with:
-          name: sentinel-${{ matrix.os }}
+          name: darknode-${{ matrix.os }}
           path: |
             dist/*.AppImage
             dist/*.deb

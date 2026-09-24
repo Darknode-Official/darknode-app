@@ -1,4 +1,4 @@
-# Build Log — Sentinel — Desktop App
+# Build Log — Darknode — Desktop App
 
 > **Why this file exists.** In fall 2029 you will write a college essay. The single
 > best material for it is *the story of how you built this* — the decisions, the bugs,

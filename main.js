@@ -1,4 +1,4 @@
-// Sentinel desktop - Electron main process. Runs shell commands (streamed),
+// Darknode desktop - Electron main process. Runs shell commands (streamed),
 // checks installed tools, and proxies local Ollama. Renderer has no Node access
 // (contextIsolation) and talks only through the preload bridge.
 const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
@@ -11,17 +11,17 @@ const net = require("net");
 const tls = require("tls");
 const dns = require("dns").promises;
 const fs = require("fs");
-// AI + enterprise governance (vendored from the Sentinel CLI)
+// AI + enterprise governance (vendored from the Darknode CLI)
 const { toAnthropicBody, anthropicDelta, usageOf } = require("./lib/anthropic");
 const { resolveOperator } = require("./lib/identity");
 const { appendUsage, loadUsage, summarize, renderReport } = require("./lib/usage");
 const { buildBundle, verifyBundle, renderBundleMd } = require("./lib/compliance");
 
-const RESULTS_DIR = path.join(os.homedir(), "sentinel-results");
+const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
 let nodePty = null;
-try { nodePty = require("node-pty"); } catch (e) { console.error("[sentinel] node-pty unavailable:", e.message); }
-console.log("[sentinel] node-pty:", nodePty ? "loaded" : "unavailable");
+try { nodePty = require("node-pty"); } catch (e) { console.error("[darknode] node-pty unavailable:", e.message); }
+console.log("[darknode] node-pty:", nodePty ? "loaded" : "unavailable");
 
 const isWin = process.platform === "win32";
 let win;
@@ -46,8 +46,14 @@ function createWindow() {
   win.setMenuBarVisibility(false);
   win.on("maximize", () => win.webContents.send("win:state", true));
   win.on("unmaximize", () => win.webContents.send("win:state", false));
-  if (process.env.SENTINEL_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
-  if (process.env.SENTINEL_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.SENTINEL_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
+  if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
+  if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
+  // Security: prevent the main renderer from navigating away from the local app.
+  win.webContents.on("will-navigate", (e, url) => {
+    if (!url.startsWith("file://")) e.preventDefault();
+  });
+  // Security: block new-window requests from the renderer (links should use openExternal).
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
@@ -61,7 +67,7 @@ app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (_evt, wp) => { delete wp.preload; wp.nodeIntegration = false; wp.contextIsolation = true; wp.sandbox = true; });
 });
 app.whenReady().then(createWindow);
-app.on("window-all-closed", () => { if (!isWin && process.platform !== "darwin") app.quit(); else if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
 ipcMain.handle("sysinfo", () => ({
@@ -77,7 +83,7 @@ ipcMain.handle("app:checkUpdate", async () => {
   try {
     const cur = app.getVersion();
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 15000);
-    let r; try { r = await fetch("https://api.github.com/repos/SpartanKing18/sentinel-web/releases/tags/sentinel", { headers: { "User-Agent": "Sentinel" }, signal: ctrl.signal }); } finally { clearTimeout(to); }
+    let r; try { r = await fetch("https://api.github.com/repos/SpartanKing18/Darknode-Official/darknode-app/releases/latest", { headers: { "User-Agent": "Darknode" }, signal: ctrl.signal }); } finally { clearTimeout(to); }
     if (!r.ok) return { ok: false };
     const d = await r.json();
     const vers = (d.assets || []).map((a) => (a.name.match(/(\d+\.\d+\.\d+)/) || [])[1]).filter(Boolean).sort(cmp);
@@ -89,7 +95,7 @@ ipcMain.handle("app:checkUpdate", async () => {
 // ---- Native Gmail OAuth (Desktop client: loopback + PKCE) ----
 // A Desktop OAuth client can't keep its secret confidential (it ships in the app),
 // which is expected for installed apps; loopback + PKCE is the flow Google prescribes.
-// The id/secret are NOT hardcoded here — they load from env or oauth.config.json
+// The id/secret are NOT hardcoded here -- they load from env or oauth.config.json
 // (gitignored), so no credentials live in source. See oauth.config.example.json.
 function loadOAuthConfig() {
   try { const p = path.join(__dirname, "oauth.config.json"); if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8")); } catch (_) {}
@@ -97,8 +103,8 @@ function loadOAuthConfig() {
 }
 const _oauthCfg = loadOAuthConfig();
 const GMAIL_OAUTH = {
-  clientId: process.env.SENTINEL_GMAIL_CLIENT_ID || _oauthCfg.gmailClientId || "",
-  clientSecret: process.env.SENTINEL_GMAIL_CLIENT_SECRET || _oauthCfg.gmailClientSecret || "",
+  clientId: process.env.DARKNODE_GMAIL_CLIENT_ID || _oauthCfg.gmailClientId || "",
+  clientSecret: process.env.DARKNODE_GMAIL_CLIENT_SECRET || _oauthCfg.gmailClientSecret || "",
   scopes: ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.compose"],
 };
 const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -123,7 +129,7 @@ function isPrivateHost(h) {
     return false;
   }
   // Not a dotted-quad literal: any non-canonical numeric encoding (decimal/hex/octal/
-  // short-form) is only reachable after DNS resolution — the caller must also check the
+  // short-form) is only reachable after DNS resolution -- the caller must also check the
   // RESOLVED address via resolvesToPrivate(). A bare integer host here is suspicious -> deny.
   if (/^(0x[0-9a-f]+|\d+)$/.test(h)) return true;
   return false;
@@ -159,7 +165,7 @@ ipcMain.handle("gmail:oauth", async (_e, creds) => {
         // CSRF defense-in-depth: reject callbacks whose state doesn't match ours.
         if (code && u.searchParams.get("state") !== state) { res.writeHead(400); res.end("bad state"); return; }
         res.writeHead(200, { "Content-Type": "text/html" });
-        res.end("<!doctype html><meta charset=utf-8><body style='font-family:system-ui;background:#0b0e14;color:#e6edf3;text-align:center;padding-top:90px'><h2>" + (code ? "Gmail connected ✓" : "Gmail connection failed") + "</h2><p>You can close this tab and return to Sentinel.</p>");
+        res.end("<!doctype html><meta charset=utf-8><body style='font-family:system-ui;background:#0b0e14;color:#e6edf3;text-align:center;padding-top:90px'><h2>" + (code ? "Gmail connected ✓" : "Gmail connection failed") + "</h2><p>You can close this tab and return to Darknode.</p>");
         if (err || !code) return finish({ ok: false, error: err || "no authorization code" });
         const d = await gmailExchange({ client_id: clientId, client_secret: clientSecret, code, code_verifier: verifier, grant_type: "authorization_code", redirect_uri: redirect });
         if (d.access_token) finish({ ok: true, access_token: d.access_token, refresh_token: d.refresh_token || "", expires_in: d.expires_in || 3600 });
@@ -199,7 +205,7 @@ ipcMain.handle("net:get", async (_e, opts) => {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 20000);
     try {
-      const r = await fetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Sentinel/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
+      const r = await fetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
       const ct = r.headers.get("content-type") || "";
       const data = ct.includes("json") ? await r.json().catch(() => null) : await r.text();
       return { ok: r.ok, status: r.status, data };
@@ -296,8 +302,10 @@ ipcMain.handle("pty:write", (_e, { id, data }) => { const p = ptys.get(id); if (
 ipcMain.handle("pty:resize", (_e, { id, cols, rows }) => { const p = ptys.get(id); if (p) { try { p.resize(cols, rows); } catch (_) {} } });
 ipcMain.handle("pty:kill", (_e, { id }) => { const p = ptys.get(id); if (p) { try { p.kill(); } catch (_) {} ptys.delete(id); } });
 
-// Is a tool on PATH?
+// Is a tool on PATH? Sanitize name to prevent shell injection.
 ipcMain.handle("which", (_e, name) => new Promise((res) => {
+  name = String(name || "").replace(/[^a-zA-Z0-9_.+-]/g, "");
+  if (!name) return res({ found: false });
   const cmd = isWin ? "where " + name : "command -v " + name;
   const p = isWin ? spawn("cmd.exe", ["/c", cmd]) : spawn("/bin/sh", ["-c", cmd]);
   let out = "";
@@ -421,7 +429,7 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
   delete payload.options; delete payload.format; delete payload.keep_alive; delete payload.num_ctx;
   const data = JSON.stringify(payload);
   const headers = { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) };
-  const key = apiKey || process.env.SENTINEL_API_KEY || process.env.OPENAI_API_KEY || "";
+  const key = apiKey || process.env.DARKNODE_API_KEY || process.env.OPENAI_API_KEY || "";
   if (key) headers["Authorization"] = "Bearer " + key;
   let content = "", toolCalls = null, inTok = 0, outTok = 0, settled = false;
   const done = (v) => { if (settled) return; settled = true; apiReqs.delete(id); resolve(v); };
@@ -461,21 +469,21 @@ ipcMain.handle("api:cancel", (_e, id) => { const rq = apiReqs.get(id); if (rq) {
 const govCwd = () => { try { return app.getPath("userData"); } catch (_) { return os.homedir(); } };
 ipcMain.handle("gov:identity", () => { try { return resolveOperator({ cwd: govCwd() }); } catch (_) { return { operator: "unknown", team: "", source: "os" }; } });
 ipcMain.handle("gov:usage:append", (_e, rec) => { try { return appendUsage(govCwd(), rec || {}); } catch (_) { return false; } });
-ipcMain.handle("gov:usage:report", (_e, opts) => { try { const recs = loadUsage(govCwd(), (opts && opts.since) ? { since: opts.since } : {}); const s = summarize(recs); return { ok: true, summary: s, text: renderReport(s, { project: "Sentinel Assistant" }), count: recs.length }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("gov:usage:report", (_e, opts) => { try { const recs = loadUsage(govCwd(), (opts && opts.since) ? { since: opts.since } : {}); const s = summarize(recs); return { ok: true, summary: s, text: renderReport(s, { project: "Darknode Assistant" }), count: recs.length }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("gov:compliance:build", (_e, opts) => {
   try {
     opts = opts || {}; const cwd = govCwd(); const id = resolveOperator({ cwd });
-    const key = opts.signingKey || process.env.SENTINEL_SIGNING_KEY || "";
+    const key = opts.signingKey || process.env.DARKNODE_SIGNING_KEY || "";
     const b = buildBundle(cwd, { operator: opts.operator || id.operator, team: opts.team || id.team, signingKey: key || undefined });
     let outPath = null;
     try { const dir = path.join(cwd, ".nexus"); fs.mkdirSync(dir, { recursive: true }); const stamp = new Date().toISOString().replace(/[:.]/g, "-"); outPath = path.join(dir, "compliance-" + stamp + ".json"); fs.writeFileSync(outPath, JSON.stringify(b, null, 2)); fs.writeFileSync(outPath.replace(/\.json$/, ".md"), renderBundleMd(b)); } catch (_) {}
     return { ok: true, bundle: b, md: renderBundleMd(b), path: outPath };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });
-ipcMain.handle("gov:compliance:verify", (_e, { bundle, signingKey }) => { try { return Object.assign({ ok: true }, verifyBundle(bundle, signingKey || process.env.SENTINEL_SIGNING_KEY || undefined)); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("gov:compliance:verify", (_e, { bundle, signingKey }) => { try { return Object.assign({ ok: true }, verifyBundle(bundle, signingKey || process.env.DARKNODE_SIGNING_KEY || undefined)); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 
 ipcMain.handle("openExternal", (_e, url) => {
-  // Only open web URLs in the OS browser — never file://, or app/protocol-handler
+  // Only open web URLs in the OS browser -- never file://, or app/protocol-handler
   // schemes a browsed/redirected page could smuggle in.
   try { const p = new URL(String(url)).protocol; if (p === "http:" || p === "https:") return shell.openExternal(url); } catch (_) {}
   return false;
@@ -492,7 +500,7 @@ ipcMain.handle("cve:search", async (_e, q) => {
   const isId = /^CVE-\d{4}-\d+$/i.test(q);
   const url = "https://services.nvd.nist.gov/rest/json/cves/2.0?" + (isId ? "cveId=" + q.toUpperCase() : "keywordSearch=" + encodeURIComponent(q)) + "&resultsPerPage=20";
   try {
-    const r = await fetch(url, { headers: { "User-Agent": "Sentinel" } });
+    const r = await fetch(url, { headers: { "User-Agent": "Darknode" } });
     if (!r.ok) return { ok: false, error: r.status === 403 ? "NVD rate limit — wait a moment" : r.status + " " + r.statusText };
     const d = await r.json();
     const list = (d.vulnerabilities || []).map((v) => {
@@ -507,6 +515,12 @@ ipcMain.handle("cve:search", async (_e, q) => {
 // ---- HTTP request tool (repeater). Runs in main to dodge renderer CSP/CORS. ----
 ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout }) => {
   const t0 = Date.now();
+  // SSRF guard: block private/loopback/link-local hosts (same as net:get).
+  try {
+    if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, error: "bad url", ms: 0 };
+    const host = new URL(url).hostname;
+    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, error: "blocked host (loopback/link-local/private not allowed)", ms: 0 };
+  } catch (_) { return { ok: false, error: "bad url", ms: 0 }; }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), timeout || 20000);
   try {
@@ -523,7 +537,7 @@ ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout 
   finally { clearTimeout(to); }
 });
 
-// ---- Loot: browse saved command output under ~/sentinel-results ----
+// ---- Loot: browse saved command output under ~/darknode-results ----
 ipcMain.handle("results:list", async () => {
   try {
     const names = await fs.promises.readdir(RESULTS_DIR);
@@ -537,7 +551,7 @@ ipcMain.handle("results:list", async () => {
 });
 ipcMain.handle("results:read", async (_e, name) => {
   try {
-    if (!name || name.includes("/") || name.includes("..")) return { ok: false, error: "invalid file name" };
+    if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) return { ok: false, error: "invalid file name" };
     const data = await fs.promises.readFile(path.join(RESULTS_DIR, name), "utf8");
     return { ok: true, name, data: data.length > 500000 ? data.slice(-500000) : data };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -580,7 +594,7 @@ function headReq(url, to) {
   return new Promise((res) => {
     let u; try { u = new URL(url); } catch (_) { return res(null); }
     const lib = u.protocol === "https:" ? https : http;
-    const req = lib.request(u, { method: "GET", timeout: to || 8000, rejectUnauthorized: false, headers: { "User-Agent": "Sentinel" } }, (r) => {
+    const req = lib.request(u, { method: "GET", timeout: to || 8000, rejectUnauthorized: false, headers: { "User-Agent": "Darknode" } }, (r) => {
       const out = { status: r.statusCode, len: r.headers["content-length"] || "", loc: r.headers["location"] || "" };
       r.destroy(); res(out);
     });
@@ -662,7 +676,7 @@ ipcMain.handle("tls:cert", async (_e, { host, port }) => {
 });
 
 // ---- GitHub integration: clone / status / commit & push ----
-const REPOS_DIR = path.join(os.homedir(), "sentinel-repos");
+const REPOS_DIR = path.join(os.homedir(), "darknode-repos");
 function git(args, opts) {
   return new Promise((resolve, reject) => {
     execFile("git", args, { maxBuffer: 1e7, ...opts }, (err, stdout, stderr) => {
@@ -705,7 +719,7 @@ async function repoFromDir(dir) {
   try { const remote = (await git(["-C", dir, "remote", "get-url", "origin"])).stdout.trim(); const m = remote.match(/github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/i); return m && m[1]; } catch (_) { return null; }
 }
 async function ghPost(repo, path, token, body) {
-  const r = await fetch("https://api.github.com/repos/" + repo + path, { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token, "Content-Type": "application/json", "User-Agent": "Sentinel" }, body: JSON.stringify(body) });
+  const r = await fetch("https://api.github.com/repos/" + repo + path, { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token, "Content-Type": "application/json", "User-Agent": "Darknode" }, body: JSON.stringify(body) });
   if (!r.ok) { let m = r.status + " " + r.statusText; try { const j = await r.json(); if (j.message) m = j.message; } catch (_) {} throw new Error(m); }
   return r.json();
 }
@@ -722,7 +736,7 @@ ipcMain.handle("github:createPR", async (_e, { dir, token, title, body }) => {
   if (!token) return { ok: false, error: "set a GitHub token in Settings" };
   try {
     const head = (await git(["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
-    const info = await fetch("https://api.github.com/repos/" + repo, { headers: { Authorization: "Bearer " + token, "User-Agent": "Sentinel" } }).then((r) => r.json());
+    const info = await fetch("https://api.github.com/repos/" + repo, { headers: { Authorization: "Bearer " + token, "User-Agent": "Darknode" } }).then((r) => r.json());
     const base = info.default_branch || "main";
     if (head === base) return { ok: false, error: "you're on the base branch (" + base + ") — create a branch first" };
     const d = await ghPost(repo, "/pulls", token, { title, head, base, body: body || "" });
@@ -732,7 +746,7 @@ ipcMain.handle("github:createPR", async (_e, { dir, token, title, body }) => {
 ipcMain.handle("github:createGist", async (_e, { token, name, content, description, isPublic }) => {
   if (!token) return { ok: false, error: "set a GitHub token in Settings" };
   try {
-    const r = await fetch("https://api.github.com/gists", { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token, "Content-Type": "application/json", "User-Agent": "Sentinel" }, body: JSON.stringify({ description: description || "", public: !!isPublic, files: { [name || "file.txt"]: { content: content || " " } } }) });
+    const r = await fetch("https://api.github.com/gists", { method: "POST", headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token, "Content-Type": "application/json", "User-Agent": "Darknode" }, body: JSON.stringify({ description: description || "", public: !!isPublic, files: { [name || "file.txt"]: { content: content || " " } } }) });
     if (!r.ok) return { ok: false, error: r.status + " " + r.statusText };
     const d = await r.json(); return { ok: true, url: d.html_url };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -763,7 +777,7 @@ ipcMain.handle("github:issues", async (_e, { dir, token }) => {
   let repo;
   try { const remote = (await git(["-C", dir, "remote", "get-url", "origin"])).stdout.trim(); const m = remote.match(/github\.com[:/]([^/]+\/[^/.]+?)(?:\.git)?$/i); repo = m && m[1]; } catch (_) {}
   if (!repo) return { ok: false, error: "no GitHub remote" };
-  const h = { Accept: "application/vnd.github+json", "User-Agent": "Sentinel" }; if (token) h.Authorization = "Bearer " + token;
+  const h = { Accept: "application/vnd.github+json", "User-Agent": "Darknode" }; if (token) h.Authorization = "Bearer " + token;
   try {
     const [iss, prs] = await Promise.all([
       fetch("https://api.github.com/repos/" + repo + "/issues?state=open&per_page=25", { headers: h }).then((r) => r.ok ? r.json() : []),
@@ -792,7 +806,7 @@ ipcMain.handle("git:push", async (_e, { dir, message, token, name, email }) => {
   try {
     await git(["-C", dir, "add", "-A"]);
     try {
-      await git(["-C", dir, "-c", "user.name=" + (name || "Sentinel"), "-c", "user.email=" + (email || "sentinel@local"), "commit", "-m", message || "Update via Sentinel"]);
+      await git(["-C", dir, "-c", "user.name=" + (name || "Darknode"), "-c", "user.email=" + (email || "darknode@local"), "commit", "-m", message || "Update via Darknode"]);
     } catch (e) { if (!/nothing to commit/i.test((e.stdout || "") + (e.stderr || ""))) throw e; }
     const remote = (await git(["-C", dir, "remote", "get-url", "origin"])).stdout.trim();
     const branch = (await git(["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
@@ -807,7 +821,7 @@ ipcMain.handle("subdomains:find", async (_e, domain) => {
   if (!domain) return { ok: false, error: "no domain" };
   const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const r = await fetch("https://crt.sh/?q=%25." + encodeURIComponent(domain) + "&output=json", { signal: ctrl.signal, headers: { "User-Agent": "Sentinel" } });
+    const r = await fetch("https://crt.sh/?q=%25." + encodeURIComponent(domain) + "&output=json", { signal: ctrl.signal, headers: { "User-Agent": "Darknode" } });
     const txt = await r.text(); let data;
     try { data = JSON.parse(txt); } catch { return { ok: false, error: "crt.sh is busy — try again in a moment" }; }
     const set = new Set();
@@ -858,12 +872,12 @@ ipcMain.handle("fs:mkfile", async (_e, { dir, name }) => {
 });
 
 // ============================================================
-//  QEMU/KVM VM engine — Sentinel's own virtual-machine manager.
+//  QEMU/KVM VM engine — Darknode's own virtual-machine manager.
 //  Owns a VM store, creates qcow2 disks, boots via qemu-system-x86_64
 //  with KVM acceleration, controls VMs live over QMP, and serves the
 //  screen to the renderer via periodic screendumps.
 // ============================================================
-const VM_DIR = path.join(os.homedir(), ".sentinel-vms");
+const VM_DIR = path.join(os.homedir(), ".darknode-vms");
 const VM_STORE = path.join(VM_DIR, "vms.json");
 const VM_DISKS = path.join(VM_DIR, "disks");
 const VM_RUN = path.join(VM_DIR, "run");
@@ -883,20 +897,6 @@ function vmExec(cmd, args, timeout) {
     p.on("error", (e) => { clearTimeout(to); res({ code: -1, err: e.message }); });
   });
 }
-// Streaming variant: pipe live output to the VM build log in the renderer.
-function vmBuildLog(s) { try { win && win.webContents.send("vm:buildLog", s); } catch (_) {} }
-function vmExecStream(cmd, args, timeout, opts) {
-  return new Promise((res) => {
-    const p = spawn(cmd, args, opts || {}); let out = "", err = "";
-    const to = setTimeout(() => { try { p.kill("SIGKILL"); } catch (_) {} }, timeout || 60000);
-    p.stdout.on("data", (d) => { out += d; vmBuildLog(d.toString()); });
-    p.stderr.on("data", (d) => { err += d; vmBuildLog(d.toString()); });
-    p.on("close", (code) => { clearTimeout(to); res({ code, out, err }); });
-    p.on("error", (e) => { clearTimeout(to); res({ code: -1, err: e.message }); });
-  });
-}
-const SENTINEL_OS_REPO = "https://github.com/SpartanKing18/sentinel-os";
-const SENTINEL_OS_BASES = { debian: 1, ubuntu: 1, ubuntu22: 1, kali: 1 };
 
 // Minimal QMP client: connect, negotiate capabilities, run one command, resolve.
 function qmp(sockPath, command, args, timeoutMs) {
@@ -939,39 +939,6 @@ ipcMain.handle("vm:create", async (_e, { name, memMB, cpus, diskGB, iso }) => {
   vms.push(vm); vmWriteStore(vms);
   return { ok: true, vm };
 });
-// Build a Sentinel OS VM on a chosen base OS: reuse the tested sentinel-os build.sh
-// (downloads the base cloud image + builds the cloud-init seed), then register the VM.
-// The disk self-provisions the Sentinel desktop + toolset on first boot.
-ipcMain.handle("vm:buildSentinel", async (_e, { name, os: baseOS, memMB, cpus, diskGB }) => {
-  vmEnsureDirs();
-  if (!SENTINEL_OS_BASES[baseOS]) return { ok: false, error: "unknown base OS '" + baseOS + "'" };
-  const dep = await vmExec("bash", ["-lc", "command -v git >/dev/null && command -v qemu-img >/dev/null && { command -v xorriso >/dev/null || command -v genisoimage >/dev/null || command -v cloud-localds >/dev/null; }"], 8000);
-  if (dep.code !== 0) return { ok: false, error: "Missing build tools. Install them: sudo apt install git qemu-utils xorriso" };
-  const SRC = path.join(VM_DIR, "sentinel-os-src");
-  if (!fs.existsSync(path.join(SRC, "build.sh"))) {
-    vmBuildLog("Cloning the Sentinel OS build recipe…\n");
-    const c = await vmExecStream("git", ["clone", "--depth", "1", SENTINEL_OS_REPO + ".git", SRC], 300000);
-    if (c.code !== 0) return { ok: false, error: "git clone failed: " + (c.err || "").slice(0, 300) };
-  } else {
-    vmBuildLog("Updating the Sentinel OS build recipe…\n");
-    await vmExecStream("git", ["-C", SRC, "pull", "--ff-only"], 60000);
-  }
-  vmBuildLog("\nBuilding the " + baseOS + " base image + cloud-init seed (downloads a few hundred MB)…\n");
-  const b = await vmExecStream("bash", ["-lc", 'cd "' + SRC + '" && rm -f sentinel-os.qcow2 seed.iso && SENTINEL_BASE=' + baseOS + " ./build.sh " + baseOS], 1800000);
-  const builtDisk = path.join(SRC, "sentinel-os.qcow2"), builtSeed = path.join(SRC, "seed.iso");
-  if (b.code !== 0 || !fs.existsSync(builtDisk)) return { ok: false, error: "build failed: " + (b.err || b.out || "no disk produced").slice(-300) };
-  name = (name || ("sentinel-" + baseOS)).replace(/[^\w.-]/g, "_").slice(0, 40) || ("sentinel-" + baseOS);
-  const id = "vm" + Date.now().toString(36);
-  const disk = path.join(VM_DISKS, id + ".qcow2"), seed = path.join(VM_DISKS, id + "-seed.iso");
-  try { fs.renameSync(builtDisk, disk); } catch (_) { fs.copyFileSync(builtDisk, disk); fs.unlinkSync(builtDisk); }
-  if (fs.existsSync(builtSeed)) { try { fs.renameSync(builtSeed, seed); } catch (_) { fs.copyFileSync(builtSeed, seed); } }
-  await vmExec("qemu-img", ["resize", disk, Math.max(20, Math.min(512, parseInt(diskGB, 10) || 30)) + "G"], 30000);
-  const vms = vmReadStore();
-  const vm = { id, name, memMB: Math.max(1024, Math.min(65536, parseInt(memMB, 10) || 4096)), cpus: Math.max(1, Math.min(32, parseInt(cpus, 10) || 2)), disk, seed: fs.existsSync(seed) ? seed : "", iso: "", os: baseOS, sentinel: true, created: Date.now() };
-  vms.push(vm); vmWriteStore(vms);
-  vmBuildLog("\n✓ Built '" + name + "'. Start it to self-provision on first boot.\n");
-  return { ok: true, vm };
-});
 ipcMain.handle("vm:update", (_e, { id, patch }) => {
   const vms = vmReadStore(); const v = vms.find((x) => x.id === id); if (!v) return { ok: false, error: "no such vm" };
   Object.assign(v, patch || {}); vmWriteStore(vms); return { ok: true, vm: v };
@@ -998,8 +965,6 @@ ipcMain.handle("vm:start", async (_e, { id }) => {
     "-netdev", "user,id=n0", "-device", "virtio-net,netdev=n0"];
   if (vmHasKvm()) args.unshift("-enable-kvm", "-cpu", "host");
   if (v.iso) { args.push("-cdrom", v.iso, "-boot", "menu=on,order=dc"); }
-  // Sentinel OS: attach the cloud-init NoCloud seed (volume CIDATA) so first boot self-provisions
-  if (v.seed && fs.existsSync(v.seed)) { args.push("-drive", "file=" + v.seed + ",media=cdrom,format=raw"); }
   let proc;
   try { proc = spawn(QEMU, args, { stdio: ["ignore", "pipe", "pipe"] }); }
   catch (e) { return { ok: false, error: e.message }; }
@@ -1053,8 +1018,7 @@ ipcMain.handle("vm:screendump", async (_e, { id }) => {
     try {
       const buf = fs.readFileSync(ppm);
       // parse P6 PPM: "P6\n<w> <h>\n255\n<rgb bytes>"
-      const isWs = (c) => c === 0x20 || c === 0x0a || c === 0x09 || c === 0x0d;
-      let p = 0; const tok = () => { while (p < buf.length && isWs(buf[p])) p++; let s = p; while (p < buf.length && !isWs(buf[p])) p++; return buf.slice(s, p).toString(); };
+      let p = 0; const tok = () => { while (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d) p++; let s = p; while (buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
       if (tok() !== "P6") return { ok: false, error: "bad ppm" };
       const w = +tok(), h = +tok(); tok(); p++; // skip maxval + single whitespace
       const rgb = buf.slice(p); const bgra = Buffer.alloc(w * h * 4);
@@ -1179,7 +1143,7 @@ async function mcpConnect(cfg) {
   }
   mcpServers.set(name, s);
   try {
-    const init = await mcpRequest(s, "initialize", { protocolVersion: MCP_PROTO, capabilities: { sampling: {}, roots: { listChanged: false } }, clientInfo: { name: "Sentinel", version: app.getVersion() } }, 20000);
+    const init = await mcpRequest(s, "initialize", { protocolVersion: MCP_PROTO, capabilities: { sampling: {}, roots: { listChanged: false } }, clientInfo: { name: "Darknode", version: app.getVersion() } }, 20000);
     s.info = (init && init.serverInfo) || null; s.caps = (init && init.capabilities) || {};
     mcpNotify(s, "notifications/initialized", {});
     await mcpRefreshTools(s);

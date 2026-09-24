@@ -1,6 +1,6 @@
 name: Build macOS app
 
-# Builds the Sentinel desktop app for macOS on native runners — Intel (macos-13) and
+# Builds the Darknode desktop app for macOS on native runners — Intel (macos-13) and
 # Apple Silicon (macos-14) — so each arch is built natively (no cross-compile of the
 # node-pty native module). Runs on a published release or on demand.
 on:
@@ -49,19 +49,20 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sentinel-macos-${{ matrix.arch }}
+          name: darknode-macos-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.zip
           if-no-files-found: error
 
-      - name: Publish the .dmg / .zip to the downloads release (sentinel-web)
-        # Needs a repo secret RELEASE_TOKEN = a PAT with repo access to sentinel-web.
+      - name: Publish the .dmg / .zip to the downloads release (darknode-app)
+        # Uploads to this repo's own "latest" release, which the web download
+        # page (getapp.js) reads from. Uses the built-in token (same-repo write).
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::No RELEASE_TOKEN — .dmg is on this run's artifacts only."
+            echo "::warning::No token — .dmg is on this run's artifacts only."
             exit 0
           fi
-          gh release upload sentinel dist/*.dmg dist/*.zip --repo SpartanKing18/sentinel-web --clobber
+          gh release upload latest dist/*.dmg dist/*.zip --repo Darknode-Official/darknode-app --clobber
