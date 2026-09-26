@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="build/icon.png" width="128" height="128" alt="Darknode">
+</p>
+
 # Darknode (desktop app)
 
 The Darknode security console — a cross-platform Electron app: an AI assistant, a
