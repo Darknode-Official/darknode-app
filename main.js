@@ -466,6 +466,42 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
 }));
 ipcMain.handle("api:cancel", (_e, id) => { const rq = apiReqs.get(id); if (rq) { try { rq.destroy(); } catch (_) {} apiReqs.delete(id); } return true; });
 
+// Darknode AI (cloud): routes the app's default assistant through the darknode.ai
+// proxy (Cloudflare worker) so no API key lives on the device. Sends cite:false
+// so answers never carry a Sources list. Streams dai:token and resolves with the
+// assembled message — same contract as ollama:stream / api:stream.
+const daiReqs = new Map();
+ipcMain.handle("dai:stream", (_e, { id, messages }) => new Promise((resolve) => {
+  const data = JSON.stringify({ provider: "darknode", model: "darknode", cite: false, messages: messages || [] });
+  let content = "", settled = false;
+  const done = (v) => { if (settled) return; settled = true; daiReqs.delete(id); resolve(v); };
+  const req = https.request(
+    { hostname: "darknode-proxy.darknode-ai.workers.dev", port: 443, path: "/api/chat", method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } },
+    (r) => {
+      if (r.statusCode >= 400) { let e = ""; r.on("data", (d) => (e += d)); r.on("end", () => { let msg = e; try { const j = JSON.parse(e); msg = (j && j.error) || e; } catch (_) {} done({ ok: false, error: "Darknode AI " + r.statusCode + ": " + String(msg).slice(0, 300) }); }); return; }
+      let buf = "";
+      r.on("data", (d) => {
+        buf += d.toString(); let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line.startsWith("data:")) continue;
+          const p = line.slice(5).trim(); if (!p || p === "[DONE]") continue;
+          let o; try { o = JSON.parse(p); } catch (_) { continue; }
+          const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
+          if (delta.content) { content += delta.content; win && win.webContents.send("dai:token", { id, chunk: delta.content }); }
+        }
+      });
+      r.on("end", () => done({ ok: true, message: { role: "assistant", content } }));
+      r.on("error", (err) => done({ ok: false, error: err.message }));
+    }
+  );
+  req.on("error", (err) => done({ ok: false, error: err.message }));
+  daiReqs.set(id, req);
+  req.write(data); req.end();
+}));
+ipcMain.handle("dai:cancel", (_e, id) => { const rq = daiReqs.get(id); if (rq) { try { rq.destroy(); } catch (_) {} daiReqs.delete(id); } return true; });
+
 // ---- enterprise governance: usage ledger + signed compliance bundle ----
 const govCwd = () => { try { return app.getPath("userData"); } catch (_) { return os.homedir(); } };
 ipcMain.handle("gov:identity", () => { try { return resolveOperator({ cwd: govCwd() }); } catch (_) { return { operator: "unknown", team: "", source: "os" }; } });

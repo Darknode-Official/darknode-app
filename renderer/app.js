@@ -89,6 +89,7 @@ let _ollamaTokenCb = null;
 if (S.onOllamaToken) S.onOllamaToken((d) => { if (_ollamaTokenCb) _ollamaTokenCb(d); });
 if (S.onClaudeToken) S.onClaudeToken((d) => { if (_ollamaTokenCb) _ollamaTokenCb(d); });
 if (S.onApiToken) S.onApiToken((d) => { if (_ollamaTokenCb) _ollamaTokenCb(d); });
+if (S.onDaiToken) S.onDaiToken((d) => { if (_ollamaTokenCb) _ollamaTokenCb(d); });
 
 // AI engine router — the Assistant runs on either the local Ollama model (default,
 // private) or Claude (Anthropic, stronger for offensive-security work). Selected in
@@ -114,19 +115,26 @@ const AI = {
     return r && r.ok ? { ok: true, data: { message: { content: (r.message && r.message.content) || "" } }, usage: r.usage } : r;
   },
 };
-// Darknode AI — the built-in assistant on the default home screen. It runs on
-// Google's Gemini through its OpenAI-compatible endpoint (streamed in the main
-// process via S.apiStream, so the renderer CSP never applies), but is presented
-// ONLY as "Darknode AI" — the underlying provider is never surfaced in the UI.
-// The API key is read from local settings and is never committed to the repo.
-// Fully independent of the Assistant's engine selector (s_ai_engine).
+// Darknode AI — the built-in assistant on the default home screen. It offers a
+// few models, always presented under the Darknode brand:
+//   • "Darknode AI" (cloud): routes through the darknode.ai proxy (S.daiStream) —
+//     no key on the device, live web access, and never cites sources on the app.
+//   • "Darknode 13b" / "Darknode 33b" (local): run on the user's device via
+//     Ollama; the model is pulled on first use.
+//   • "Fable" (cloud): a Claude-family model via the user's Anthropic key.
+const DAI_LS = (k, d) => { try { return (localStorage.getItem(k) || "").trim() || d; } catch (_) { return d; } };
 const DAI = {
-  BASE: "https://generativelanguage.googleapis.com/v1beta/openai",
-  model: () => { try { return (localStorage.getItem("s_dai_model") || "").trim() || "gemini-2.5-flash"; } catch (_) { return "gemini-2.5-flash"; } },
-  key: () => { try { return (localStorage.getItem("s_dai_key") || "").trim(); } catch (_) { return ""; } },
-  hasKey: () => !!DAI.key(),
-  stream: (id, body) => S.apiStream(id, body, DAI.BASE, DAI.key(), DAI.model()),
-  cancel: (id) => { try { return S.apiCancel(id); } catch (_) {} },
+  MODELS: [
+    { id: "darknode", name: "Darknode AI", kind: "cloud", sub: "web access" },
+    { id: "dn13", name: "Darknode 13b", kind: "local", sub: "on-device", tag: () => DAI_LS("s_dai_13b", "darknode-13b") },
+    { id: "dn33", name: "Darknode 33b", kind: "local", sub: "on-device", tag: () => DAI_LS("s_dai_33b", "darknode-33b") },
+    { id: "fable", name: "Fable", kind: "cloud", sub: "Claude-family", claude: true, model: () => DAI_LS("s_dai_fable_model", "claude-fable-5-1") },
+  ],
+  sel: () => DAI_LS("s_dai_sel", "darknode"),
+  setSel: (id) => { try { localStorage.setItem("s_dai_sel", id); } catch (_) {} },
+  model: (id) => DAI.MODELS.find((m) => m.id === (id || DAI.sel())) || DAI.MODELS[0],
+  anthropicKey: () => DAI_LS("s_anthropic_key", ""),
+  cancel: (id) => { try { S.daiCancel(id); } catch (_) {} try { S.ollamaCancel(id); } catch (_) {} try { S.claudeCancel(id); } catch (_) {} },
 };
 // Best-effort chargeback logging for one Assistant turn (operator/team resolved in main).
 async function logUsage(fields) { try { const id = await S.govIdentity(); await S.govUsageAppend(Object.assign({ ts: new Date().toISOString(), operator: id && id.operator, team: id && id.team }, fields)); } catch (_) {} }
@@ -928,7 +936,7 @@ const sections = {
       <div class="dai blank" id="dai">
         <div class="dai-top">
           <span class="dai-brand"><span class="dai-dot"></span>Darknode AI</span>
-          <span class="dai-model">secure</span>
+          <label class="dai-pick"><select id="dai-model" title="Model">${DAI.MODELS.map((m) => `<option value="${m.id}">${esc(m.name)}${m.sub ? " · " + esc(m.sub) : ""}</option>`).join("")}</select><svg class="dai-pick-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></label>
           <button class="dai-new" id="dai-new" title="New chat">New chat</button>
         </div>
         <div class="dai-main" id="dai-main">
@@ -939,10 +947,6 @@ const sections = {
           </div>
           <div class="dai-thread" id="dai-thread"></div>
           <div class="dai-dock">
-            <div class="dai-keybar" id="dai-keybar" hidden>
-              <input class="in" id="dai-key" type="password" placeholder="Paste your Darknode AI key to start" autocomplete="off" spellcheck="false">
-              <button class="btn sm" id="dai-keysave">Connect</button>
-            </div>
             <div class="dai-composer" id="dai-composer">
               <textarea id="dai-input" rows="1" placeholder="Message Darknode AI" spellcheck="false"></textarea>
               <button class="dai-send" id="dai-send" aria-label="Send" title="Send">
@@ -955,26 +959,18 @@ const sections = {
         </div>
       </div>`;
     const dai = $("#dai", el), thread = $("#dai-thread", el), input = $("#dai-input", el);
-    const sendBtn = $("#dai-send", el), keybar = $("#dai-keybar", el), composer = $("#dai-composer", el);
+    const sendBtn = $("#dai-send", el), modelSel = $("#dai-model", el);
     let history = [{ role: "system", content: DAI_SYS }];
     let busy = false, seq = 0;
     const atBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
     const toBottom = () => { thread.scrollTop = thread.scrollHeight; };
 
-    // Gate on a key: without one, show the inline connect bar and hide the composer.
-    function syncKey() {
-      const has = DAI.hasKey();
-      keybar.hidden = has; composer.style.display = has ? "" : "none";
-      if (!has) { const s = $("#dai-suggest", el); if (s) s.style.display = "none"; }
-    }
-    syncKey();
-    $("#dai-keysave", el).onclick = () => {
-      const v = $("#dai-key", el).value.trim(); if (!v) return;
-      try { localStorage.setItem("s_dai_key", v); } catch (_) {}
-      syncKey(); const s = $("#dai-suggest", el); if (s && dai.classList.contains("blank")) s.style.display = "";
-      input.focus();
-    };
-    $("#dai-key", el).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#dai-keysave", el).click(); } };
+    // Restore the chosen model and keep the composer placeholder in step.
+    modelSel.value = DAI.sel();
+    if (modelSel.selectedIndex < 0) modelSel.value = "darknode";
+    const syncPlaceholder = () => { input.placeholder = "Message " + DAI.model().name; };
+    syncPlaceholder();
+    modelSel.onchange = () => { DAI.setSel(modelSel.value); syncPlaceholder(); input.focus(); };
 
     const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; };
     input.addEventListener("input", grow);
@@ -990,12 +986,33 @@ const sections = {
       thread.appendChild(row); toBottom();
       return $(".dai-txt", row);
     }
+    // Local models run on-device via Ollama; pull the tag on first use.
+    async function ensureLocal(m, out) {
+      const tag = m.tag();
+      let tags = null;
+      try { const r = await S.ollama("/api/tags"); if (r && r.ok && r.data && Array.isArray(r.data.models)) tags = r.data.models.map((x) => x.name); } catch (_) {}
+      if (tags === null) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.textContent = m.name + " runs on your device via Ollama, which isn't reachable. Start Ollama (ollama serve), then try again."; return false; }
+      if (tags.some((t) => t === tag || t.split(":")[0] === tag)) return true;
+      out.textContent = "Setting up " + m.name + " on your device — downloading the model (first run only, this can take a while)…";
+      let pr; try { pr = await S.ollama("/api/pull", { name: tag, stream: false }); } catch (_) { pr = null; }
+      const okPull = pr && pr.ok && pr.data && JSON.stringify(pr.data).indexOf("success") >= 0;
+      if (!okPull) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "Couldn't load <b>" + esc(m.name) + "</b> (Ollama model \"" + esc(tag) + "\"). If you built it locally under a different name, set the exact tag in <b>Settings → Darknode AI</b>, or run <code>ollama pull " + esc(tag) + "</code>."; return false; }
+      out.textContent = ""; out.classList.add("dai-live"); return true;
+    }
     async function streamReply(out) {
+      const m = DAI.model();
+      if (m.kind === "local") { if (!(await ensureLocal(m, out))) return; }
+      if (m.claude && !DAI.anthropicKey()) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "<b>Fable</b> needs an Anthropic API key. Add one in <b>Settings → Darknode AI</b>."; return; }
       const sid = "dai" + (++seq); let acc = "";
       _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); out.innerHTML = mdHtml(acc); if (stick) toBottom(); };
-      const r = await DAI.stream(sid, { messages: history });
+      let r;
+      try {
+        if (m.kind === "local") r = await S.ollamaStream(sid, { model: m.tag(), messages: history });
+        else if (m.claude) r = await S.claudeStream(sid, { model: m.model(), messages: history }, DAI.anthropicKey());
+        else r = await S.daiStream(sid, history);
+      } catch (e) { r = { ok: false, error: (e && e.message) || "stream error" }; }
       _ollamaTokenCb = null; out.classList.remove("dai-live");
-      if (!r || !r.ok) { out.classList.add("dai-err"); out.textContent = (r && r.error) || "Darknode AI is unavailable — check your key in Settings."; return; }
+      if (!r || !r.ok) { out.classList.add("dai-err"); out.textContent = (r && r.error) || "Darknode AI is unavailable right now."; return; }
       const reply = (r.message && r.message.content) || acc || "(no reply)";
       history.push({ role: "assistant", content: reply });
       out.innerHTML = mdHtml(reply); if (atBottom()) toBottom();
@@ -1003,7 +1020,6 @@ const sections = {
     async function send(text) {
       text = (text != null ? text : input.value).trim();
       if (!text || busy) return;
-      if (!DAI.hasKey()) { syncKey(); return; }
       busy = true; sendBtn.disabled = true;
       if (dai.classList.contains("blank")) dai.classList.remove("blank");
       input.value = ""; grow();
@@ -1019,7 +1035,6 @@ const sections = {
     $("#dai-new", el).onclick = () => {
       history = [{ role: "system", content: DAI_SYS }];
       thread.innerHTML = ""; dai.classList.add("blank");
-      const s = $("#dai-suggest", el); if (s && DAI.hasKey()) s.style.display = "";
       input.value = ""; grow(); input.focus();
     };
     // Copy button on streamed code blocks.
@@ -3320,9 +3335,11 @@ const sections = {
         <div class="btns" style="margin-top:10px"><button class="btn sm" id="ghsave">Save</button><span class="run-status" id="ghmsg"></span></div>
       </div>
       <div class="card"><div class="lbl">Darknode AI</div>
-        <p class="muted" style="margin:0 0 10px;font-size:.82rem">The assistant on the home screen. Paste an API key to power it, and optionally pin a model (default <span class="mono">gemini-2.5-flash</span>). The key stays on this machine and is never uploaded.</p>
-        <label class="pb-f" style="margin-bottom:8px"><span>API key</span><input class="in" id="daikey" type="password" placeholder="paste key" autocomplete="off" spellcheck="false"></label>
-        <label class="pb-f" style="margin-bottom:8px"><span>Model (optional)</span><input class="in mono" id="daimodel" spellcheck="false" placeholder="gemini-2.5-flash"></label>
+        <p class="muted" style="margin:0 0 10px;font-size:.82rem">The assistant on the home screen. <b>Darknode AI</b> is cloud and needs no key — it runs through darknode.ai with web access. <b>Darknode 13b</b> and <b>Darknode 33b</b> run on your own device via Ollama (downloaded on first use). <b>Fable</b> is a Claude-family model and needs an Anthropic API key. All keys and tags stay on this machine.</p>
+        <label class="pb-f" style="margin-bottom:8px"><span>Darknode 13b — Ollama tag</span><input class="in mono" id="dai13b" spellcheck="false" placeholder="darknode-13b"></label>
+        <label class="pb-f" style="margin-bottom:8px"><span>Darknode 33b — Ollama tag</span><input class="in mono" id="dai33b" spellcheck="false" placeholder="darknode-33b"></label>
+        <label class="pb-f" style="margin-bottom:8px"><span>Fable — Anthropic API key</span><input class="in" id="daiakey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label>
+        <label class="pb-f" style="margin-bottom:8px"><span>Fable — model (optional)</span><input class="in mono" id="daifmodel" spellcheck="false" placeholder="claude-fable-5-1"></label>
         <div class="btns" style="margin-top:6px"><button class="btn sm" id="daisave">Save</button><span class="run-status" id="daimsg"></span></div>
       </div>
       <div class="card"><div class="lbl">MCP servers</div>
@@ -3368,11 +3385,19 @@ const sections = {
         const m = $("#ghmsg", el); m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000);
       } catch (_) {}
     };
-    // ---- Darknode AI key + model ----
-    { const k = $("#daikey", el), md = $("#daimodel", el);
-      try { if (k) k.value = localStorage.getItem("s_dai_key") || ""; if (md) md.value = localStorage.getItem("s_dai_model") || ""; } catch (_) {}
+    // ---- Darknode AI: local model tags + Fable (Anthropic) key/model ----
+    { const t13 = $("#dai13b", el), t33 = $("#dai33b", el), ak = $("#daiakey", el), fm = $("#daifmodel", el);
+      const LG = (key) => { try { return localStorage.getItem(key) || ""; } catch (_) { return ""; } };
+      const setOrDel = (key, v) => { try { if (v) localStorage.setItem(key, v); else localStorage.removeItem(key); } catch (_) {} };
+      try { if (t13) t13.value = LG("s_dai_13b"); if (t33) t33.value = LG("s_dai_33b"); if (ak) ak.value = LG("s_anthropic_key"); if (fm) fm.value = LG("s_dai_fable_model"); } catch (_) {}
       const b = $("#daisave", el);
-      if (b) b.onclick = () => { try { localStorage.setItem("s_dai_key", (k.value || "").trim()); const mv = (md.value || "").trim(); if (mv) localStorage.setItem("s_dai_model", mv); else localStorage.removeItem("s_dai_model"); const m = $("#daimsg", el); m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000); } catch (_) {} };
+      if (b) b.onclick = () => {
+        setOrDel("s_dai_13b", (t13.value || "").trim());
+        setOrDel("s_dai_33b", (t33.value || "").trim());
+        setOrDel("s_anthropic_key", (ak.value || "").trim());
+        setOrDel("s_dai_fable_model", (fm.value || "").trim());
+        const m = $("#daimsg", el); if (m) { m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000); }
+      };
     }
     // ---- MCP servers ----
     { const t = $("#mcpcfg", el); if (t) { const raw = localStorage.getItem("s_mcp"); if (raw) { try { t.value = JSON.stringify(JSON.parse(raw), null, 1); } catch (_) { t.value = raw; } } } }
