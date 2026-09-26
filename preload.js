@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld("darknode", {
   apiStream: (id, body, base, apiKey, model) => ipcRenderer.invoke("api:stream", { id, body, base, apiKey, model }),
   apiCancel: (id) => ipcRenderer.invoke("api:cancel", id),
   onApiToken: (cb) => ipcRenderer.on("api:token", (_e, d) => cb(d)),
+  // Darknode AI (cloud) — routes through the darknode.ai proxy; no key on device,
+  // web access included, cite:false (the app never shows a Sources list).
+  daiStream: (id, messages) => ipcRenderer.invoke("dai:stream", { id, messages }),
+  daiCancel: (id) => ipcRenderer.invoke("dai:cancel", id),
+  onDaiToken: (cb) => ipcRenderer.on("dai:token", (_e, d) => cb(d)),
   // enterprise governance: usage ledger + compliance bundle
   govIdentity: () => ipcRenderer.invoke("gov:identity"),
   govUsageAppend: (rec) => ipcRenderer.invoke("gov:usage:append", rec),
