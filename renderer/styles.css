@@ -1267,3 +1267,18 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .dai-chip span{display:block;font-size:.75rem;color:var(--txt-2);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .dai-foot{text-align:center;font-size:.7rem;color:var(--txt-2);margin-top:10px}
 @media (max-width:560px){.dai-suggest{grid-template-columns:1fr}}
+
+/* Graphite covers the Darknode AI home too (it's the default screen):
+   flat grey user bubbles + a solid mint send button instead of the
+   gradient/violet defaults, matching the rest of the skin. */
+:root[data-skin="graphite"] .dai-msg.user .dai-txt{background:var(--card2);color:var(--txt);font-weight:400}
+:root[data-skin="graphite"][data-theme="light"] .dai-msg.user .dai-txt{background:#ececee}
+:root[data-skin="graphite"] .dai-send{background:var(--acc);color:#04140f}
+:root[data-skin="graphite"] .dai-send:hover{opacity:1;filter:brightness(1.06)}
+:root[data-skin="graphite"] .dai-dot{background:var(--acc);box-shadow:none}
+:root[data-skin="graphite"] .dai-composer{border-radius:24px}
+:root[data-skin="graphite"] .dai-composer:focus-within{border-color:var(--acc-line);box-shadow:0 0 0 3px var(--acc-soft)}
+:root[data-skin="graphite"] .dai-logo{box-shadow:0 0 0 1px var(--line)}
+:root[data-skin="graphite"] .dai-greet{font-weight:700}
+:root[data-skin="graphite"] .dai-chip{border-radius:14px}
+:root[data-skin="graphite"][data-theme="dark"] .dai-txt .code-block{background:#101010;border-radius:12px}
