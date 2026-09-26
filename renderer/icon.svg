@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16223580"/>
+      <stop offset="0" stop-color="#132032"/>
+      <stop offset="1" stop-color="#0a111c"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="212" fill="url(#bg)" stroke="#223047" stroke-width="4"/>
+  <!-- Darknode mark (100x100 logo) centered and scaled -->
+  <g transform="translate(232,232) scale(5.6)">
+    <rect x="10" y="10" width="32" height="32" rx="7" fill="none" stroke="#F2F5F9" stroke-width="6"/>
+    <rect x="58" y="10" width="32" height="32" rx="7" fill="none" stroke="#F2F5F9" stroke-width="6"/>
+    <rect x="10" y="58" width="32" height="32" rx="7" fill="none" stroke="#F2F5F9" stroke-width="6"/>
+    <rect x="58" y="58" width="32" height="32" rx="7" fill="none" stroke="#F2F5F9" stroke-width="6"/>
+    <rect x="66.96" y="66.96" width="14.08" height="14.08" rx="3.5" fill="#EAB308"/>
+  </g>
+</svg>
