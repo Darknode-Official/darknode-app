@@ -1015,3 +1015,62 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
   * { box-shadow:none !important; text-shadow:none !important; animation:none !important; }
   @page { margin:1.5cm; }
 }
+
+/* ============================================================
+   Darknode AI — default home screen (ChatGPT-style chat)
+   ============================================================ */
+#page.dai-mode{padding:0;overflow:hidden;animation:none}
+.dai{height:100%;display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.dai-top{display:flex;align-items:center;gap:10px;padding:11px 18px;border-bottom:1px solid var(--line);flex:none}
+.dai-brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem;color:var(--txt)}
+.dai-brand .dai-dot{width:9px;height:9px;border-radius:50%;background:var(--sec,var(--acc));box-shadow:0 0 10px var(--sec,var(--acc))}
+.dai-model{font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2);border:1px solid var(--line);border-radius:20px;padding:2px 10px}
+.dai-new{margin-left:auto;font-size:.78rem;color:var(--txt-2);background:transparent;border:1px solid var(--line);border-radius:8px;padding:5px 13px;cursor:pointer;transition:color .15s,border-color .15s}
+.dai-new:hover{color:var(--txt);border-color:var(--line-2)}
+
+.dai-main{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;width:100%}
+.dai.blank .dai-main{justify-content:center}
+.dai.blank .dai-thread{display:none}
+.dai:not(.blank) .dai-center,.dai:not(.blank) .dai-suggest,.dai:not(.blank) .dai-foot{display:none}
+
+.dai-center{width:100%;max-width:720px;padding:20px 24px 6px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.dai-logo{width:54px;height:54px;border-radius:15px;margin-bottom:16px;box-shadow:0 0 0 1px var(--line),0 10px 30px -10px color-mix(in srgb,var(--sec,var(--acc)) 65%,transparent)}
+.dai-greet{font-size:1.65rem;font-weight:700;margin:0 0 6px;letter-spacing:-.01em}
+.dai-sub{color:var(--txt-2);margin:0;font-size:.94rem;max-width:460px}
+
+.dai-thread{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:760px;padding:24px 20px 10px;display:flex;flex-direction:column;gap:20px}
+.dai-msg{display:flex;gap:12px;align-items:flex-start}
+.dai-msg.user{justify-content:flex-end}
+.dai-av{width:28px;height:28px;border-radius:8px;flex:none;box-shadow:0 0 0 1px var(--line)}
+.dai-txt{font-size:.9rem;line-height:1.62;color:var(--txt);white-space:normal;word-break:break-word}
+.dai-msg.user .dai-txt{background:var(--grad-acc);color:#02121a;font-weight:500;border-radius:16px;padding:10px 15px;max-width:78%}
+.dai-msg.ai .dai-txt{flex:1;min-width:0;padding-top:3px}
+.dai-txt.dai-live::after{content:"";display:inline-block;width:8px;height:15px;margin-left:2px;background:var(--sec,var(--acc));border-radius:2px;vertical-align:text-bottom;animation:daiBlink 1s steps(1) infinite}
+@keyframes daiBlink{50%{opacity:0}}
+.dai-txt.dai-err{color:var(--bad)}
+.dai-txt code{font-family:ui-monospace,monospace;font-size:.82rem;background:color-mix(in srgb,var(--surface-3,var(--card2)) 60%,transparent);padding:1px 5px;border-radius:4px}
+.dai-txt strong{color:var(--txt);font-weight:700}
+.dai-txt .code-block{position:relative;margin:9px 0;padding:11px 13px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);overflow-x:auto}
+.dai-txt .code-block code{display:block;white-space:pre;background:none;padding:0;color:var(--txt-2);font-size:.82rem}
+.dai-txt .cb-copy{position:absolute;top:6px;right:6px;padding:2px 8px;font-size:.68rem;border:1px solid var(--line-2);border-radius:5px;background:var(--card);color:var(--txt-2);cursor:pointer}
+.dai-txt .cb-copy:hover{color:var(--txt);border-color:var(--acc-line)}
+
+.dai-dock{flex:none;width:100%;max-width:760px;padding:8px 20px 14px}
+.dai-keybar{display:flex;gap:8px;margin-bottom:10px}
+.dai-keybar[hidden]{display:none}
+.dai-keybar .in{flex:1}
+.dai-composer{display:flex;align-items:flex-end;gap:8px;background:var(--card);border:1px solid var(--line-2);border-radius:24px;padding:7px 7px 7px 18px;box-shadow:var(--sh-1);transition:border-color .15s,box-shadow .15s}
+.dai-composer:focus-within{border-color:var(--acc-line);box-shadow:0 0 0 3px var(--acc-soft)}
+.dai-composer textarea{flex:1;border:none;background:transparent;color:var(--txt);font:inherit;font-size:.92rem;line-height:1.5;resize:none;outline:none;max-height:200px;padding:7px 0}
+.dai-composer textarea::placeholder{color:var(--txt-2)}
+.dai-send{flex:none;width:36px;height:36px;border-radius:50%;border:none;background:var(--sec,var(--acc));color:#02121a;cursor:pointer;display:grid;place-items:center;transition:opacity .15s,transform .1s}
+.dai-send:hover{opacity:.9}
+.dai-send:active{transform:scale(.94)}
+.dai-send:disabled{opacity:.4;cursor:default}
+.dai-suggest{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.dai-chip{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 14px;cursor:pointer;transition:border-color .15s,background .15s}
+.dai-chip:hover{border-color:var(--line-2);background:var(--card2)}
+.dai-chip b{display:block;font-size:.85rem;color:var(--txt);margin-bottom:3px}
+.dai-chip span{display:block;font-size:.75rem;color:var(--txt-2);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.dai-foot{text-align:center;font-size:.7rem;color:var(--txt-2);margin-top:10px}
+@media (max-width:560px){.dai-suggest{grid-template-columns:1fr}}
