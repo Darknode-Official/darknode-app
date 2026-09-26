@@ -114,6 +114,20 @@ const AI = {
     return r && r.ok ? { ok: true, data: { message: { content: (r.message && r.message.content) || "" } }, usage: r.usage } : r;
   },
 };
+// Darknode AI — the built-in assistant on the default home screen. It runs on
+// Google's Gemini through its OpenAI-compatible endpoint (streamed in the main
+// process via S.apiStream, so the renderer CSP never applies), but is presented
+// ONLY as "Darknode AI" — the underlying provider is never surfaced in the UI.
+// The API key is read from local settings and is never committed to the repo.
+// Fully independent of the Assistant's engine selector (s_ai_engine).
+const DAI = {
+  BASE: "https://generativelanguage.googleapis.com/v1beta/openai",
+  model: () => { try { return (localStorage.getItem("s_dai_model") || "").trim() || "gemini-2.5-flash"; } catch (_) { return "gemini-2.5-flash"; } },
+  key: () => { try { return (localStorage.getItem("s_dai_key") || "").trim(); } catch (_) { return ""; } },
+  hasKey: () => !!DAI.key(),
+  stream: (id, body) => S.apiStream(id, body, DAI.BASE, DAI.key(), DAI.model()),
+  cancel: (id) => { try { return S.apiCancel(id); } catch (_) {} },
+};
 // Best-effort chargeback logging for one Assistant turn (operator/team resolved in main).
 async function logUsage(fields) { try { const id = await S.govIdentity(); await S.govUsageAppend(Object.assign({ ts: new Date().toISOString(), operator: id && id.operator, team: id && id.team }, fields)); } catch (_) {} }
 // Rough USD cost estimate for a Claude turn (per-Mtok in/out); local = free.
@@ -898,6 +912,121 @@ let _kevCache = null; // CISA KEV catalog, fetched once per session
 const timeAgo = (ms) => { const s = (Date.now() - ms) / 1000; if (isNaN(s)) return ""; if (s < 3600) return Math.max(0, Math.floor(s / 60)) + "m"; if (s < 86400) return Math.floor(s / 3600) + "h"; return Math.floor(s / 86400) + "d"; };
 
 const sections = {
+  // Darknode AI — the default landing screen. A ChatGPT-style chat (centered
+  // empty state → docked composer once a conversation starts) branded purely as
+  // "Darknode AI"; it streams from Gemini via DAI (see the DAI helper). Suggestion
+  // chips seed Darknode-relevant security tasks.
+  home(el) {
+    const DAI_SYS = "You are Darknode AI, the built-in assistant of the Darknode security console — an elite offensive- and defensive-security researcher and senior software engineer working alongside an operator on systems they own or are explicitly authorized to test. Be direct, concrete and practical: give precise, copy-pasteable commands and working code, prefer real output over caveats, and keep answers tight. Use Markdown — fenced code blocks for commands and code. You are Darknode AI; never mention or reveal the underlying model or provider.";
+    const SUGGEST = [
+      ["Scan a host", "Recon", "Give me the exact nmap command to find open ports, services and versions on a host, and explain the key flags."],
+      ["Explain a CVE", "Threat intel", "Explain CVE-2021-44228 (Log4Shell): what it is, how it is exploited, and how to detect and remediate it."],
+      ["Reverse shell", "Payloads", "Give me reliable reverse-shell one-liners (bash, python, nc) for an authorized pentest, plus the listener to catch them."],
+      ["Recon playbook", "Engagement", "Draft a step-by-step external recon playbook for an authorized engagement against a domain I own."],
+    ];
+    el.innerHTML = `
+      <div class="dai blank" id="dai">
+        <div class="dai-top">
+          <span class="dai-brand"><span class="dai-dot"></span>Darknode AI</span>
+          <span class="dai-model">secure</span>
+          <button class="dai-new" id="dai-new" title="New chat">New chat</button>
+        </div>
+        <div class="dai-main" id="dai-main">
+          <div class="dai-center" id="dai-center">
+            <img class="dai-logo" src="icon.svg" alt="">
+            <h1 class="dai-greet">How can I help you today?</h1>
+            <p class="dai-sub">Darknode AI — your security copilot for recon, exploits, CVEs and code.</p>
+          </div>
+          <div class="dai-thread" id="dai-thread"></div>
+          <div class="dai-dock">
+            <div class="dai-keybar" id="dai-keybar" hidden>
+              <input class="in" id="dai-key" type="password" placeholder="Paste your Darknode AI key to start" autocomplete="off" spellcheck="false">
+              <button class="btn sm" id="dai-keysave">Connect</button>
+            </div>
+            <div class="dai-composer" id="dai-composer">
+              <textarea id="dai-input" rows="1" placeholder="Message Darknode AI" spellcheck="false"></textarea>
+              <button class="dai-send" id="dai-send" aria-label="Send" title="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <div class="dai-suggest" id="dai-suggest">${SUGGEST.map((s, i) => `<button class="dai-chip" data-s="${i}"><b>${esc(s[0])}</b><span>${esc(s[2])}</span></button>`).join("")}</div>
+            <div class="dai-foot">Darknode AI can make mistakes. Verify commands before running them.</div>
+          </div>
+        </div>
+      </div>`;
+    const dai = $("#dai", el), thread = $("#dai-thread", el), input = $("#dai-input", el);
+    const sendBtn = $("#dai-send", el), keybar = $("#dai-keybar", el), composer = $("#dai-composer", el);
+    let history = [{ role: "system", content: DAI_SYS }];
+    let busy = false, seq = 0;
+    const atBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
+    const toBottom = () => { thread.scrollTop = thread.scrollHeight; };
+
+    // Gate on a key: without one, show the inline connect bar and hide the composer.
+    function syncKey() {
+      const has = DAI.hasKey();
+      keybar.hidden = has; composer.style.display = has ? "" : "none";
+      if (!has) { const s = $("#dai-suggest", el); if (s) s.style.display = "none"; }
+    }
+    syncKey();
+    $("#dai-keysave", el).onclick = () => {
+      const v = $("#dai-key", el).value.trim(); if (!v) return;
+      try { localStorage.setItem("s_dai_key", v); } catch (_) {}
+      syncKey(); const s = $("#dai-suggest", el); if (s && dai.classList.contains("blank")) s.style.display = "";
+      input.focus();
+    };
+    $("#dai-key", el).onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#dai-keysave", el).click(); } };
+
+    const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; };
+    input.addEventListener("input", grow);
+
+    function addUser(text) {
+      const row = document.createElement("div"); row.className = "dai-msg user";
+      row.innerHTML = `<div class="dai-txt">${esc(text)}</div>`;
+      thread.appendChild(row); toBottom();
+    }
+    function addAI() {
+      const row = document.createElement("div"); row.className = "dai-msg ai";
+      row.innerHTML = `<img class="dai-av" src="icon.svg" alt=""><div class="dai-txt md dai-live"></div>`;
+      thread.appendChild(row); toBottom();
+      return $(".dai-txt", row);
+    }
+    async function streamReply(out) {
+      const sid = "dai" + (++seq); let acc = "";
+      _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); out.innerHTML = mdHtml(acc); if (stick) toBottom(); };
+      const r = await DAI.stream(sid, { messages: history });
+      _ollamaTokenCb = null; out.classList.remove("dai-live");
+      if (!r || !r.ok) { out.classList.add("dai-err"); out.textContent = (r && r.error) || "Darknode AI is unavailable — check your key in Settings."; return; }
+      const reply = (r.message && r.message.content) || acc || "(no reply)";
+      history.push({ role: "assistant", content: reply });
+      out.innerHTML = mdHtml(reply); if (atBottom()) toBottom();
+    }
+    async function send(text) {
+      text = (text != null ? text : input.value).trim();
+      if (!text || busy) return;
+      if (!DAI.hasKey()) { syncKey(); return; }
+      busy = true; sendBtn.disabled = true;
+      if (dai.classList.contains("blank")) dai.classList.remove("blank");
+      input.value = ""; grow();
+      history.push({ role: "user", content: text });
+      addUser(text);
+      const out = addAI();
+      await streamReply(out);
+      busy = false; sendBtn.disabled = false; input.focus();
+    }
+    sendBtn.onclick = () => send();
+    input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+    $("#dai-suggest", el).onclick = (e) => { const b = e.target.closest("[data-s]"); if (b) send(SUGGEST[+b.dataset.s][2]); };
+    $("#dai-new", el).onclick = () => {
+      history = [{ role: "system", content: DAI_SYS }];
+      thread.innerHTML = ""; dai.classList.add("blank");
+      const s = $("#dai-suggest", el); if (s && DAI.hasKey()) s.style.display = "";
+      input.value = ""; grow(); input.focus();
+    };
+    // Copy button on streamed code blocks.
+    thread.onclick = (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const code = b.parentElement.querySelector("code"); if (code) navigator.clipboard?.writeText(code.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); }); };
+    setTimeout(() => input.focus(), 60);
+  },
+
   // Native file forensics — hashes/entropy/strings/type computed over the real
   // file bytes in the main process (window.darknode.forensicsAnalyze).
   forensics(el) {
@@ -3190,6 +3319,12 @@ const sections = {
         <div class="pb-fields" style="grid-template-columns:1fr 1fr"><label class="pb-f"><span>Commit name</span><input class="in" id="ghname" spellcheck="false"></label><label class="pb-f"><span>Commit email</span><input class="in" id="ghemail" spellcheck="false"></label></div>
         <div class="btns" style="margin-top:10px"><button class="btn sm" id="ghsave">Save</button><span class="run-status" id="ghmsg"></span></div>
       </div>
+      <div class="card"><div class="lbl">Darknode AI</div>
+        <p class="muted" style="margin:0 0 10px;font-size:.82rem">The assistant on the home screen. Paste an API key to power it, and optionally pin a model (default <span class="mono">gemini-2.5-flash</span>). The key stays on this machine and is never uploaded.</p>
+        <label class="pb-f" style="margin-bottom:8px"><span>API key</span><input class="in" id="daikey" type="password" placeholder="paste key" autocomplete="off" spellcheck="false"></label>
+        <label class="pb-f" style="margin-bottom:8px"><span>Model (optional)</span><input class="in mono" id="daimodel" spellcheck="false" placeholder="gemini-2.5-flash"></label>
+        <div class="btns" style="margin-top:6px"><button class="btn sm" id="daisave">Save</button><span class="run-status" id="daimsg"></span></div>
+      </div>
       <div class="card"><div class="lbl">MCP servers</div>
         <p class="muted" style="margin:0 0 10px;font-size:.82rem">Give the Assistant tools from any Model Context Protocol server. Each entry is <span class="mono">{"name","transport":"stdio"|"http","command"/"args"/"env" or "url"/"headers","trust":"auto"|"ask"}</span>. They load when you open the Assistant. Click a preset to add one:</p>
         <div class="ref-chips" id="mcppresets" style="margin:0 0 8px"></div>
@@ -3233,6 +3368,12 @@ const sections = {
         const m = $("#ghmsg", el); m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000);
       } catch (_) {}
     };
+    // ---- Darknode AI key + model ----
+    { const k = $("#daikey", el), md = $("#daimodel", el);
+      try { if (k) k.value = localStorage.getItem("s_dai_key") || ""; if (md) md.value = localStorage.getItem("s_dai_model") || ""; } catch (_) {}
+      const b = $("#daisave", el);
+      if (b) b.onclick = () => { try { localStorage.setItem("s_dai_key", (k.value || "").trim()); const mv = (md.value || "").trim(); if (mv) localStorage.setItem("s_dai_model", mv); else localStorage.removeItem("s_dai_model"); const m = $("#daimsg", el); m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000); } catch (_) {} };
+    }
     // ---- MCP servers ----
     { const t = $("#mcpcfg", el); if (t) { const raw = localStorage.getItem("s_mcp"); if (raw) { try { t.value = JSON.stringify(JSON.parse(raw), null, 1); } catch (_) { t.value = raw; } } } }
     const mcpMsg = (cls, txt) => { const m = $("#mcpmsg", el); if (m) { m.className = "run-status " + cls; m.textContent = txt; } };
@@ -3419,7 +3560,7 @@ const SECTION_HUE = {
   vms: "#38bdf8", cloud: "#38bdf8",
   http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", forensics: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
   arsenal: "#a78bfa", training: "#a78bfa",
-  agent: "#c26cff", ai: "#c26cff",
+  agent: "#c26cff", ai: "#c26cff", home: "#c26cff",
 };
 function labelOfSec(s) { const b = document.querySelector('.nav-item[data-sec="' + s + '"] span'); return b ? b.textContent.trim() : s.charAt(0).toUpperCase() + s.slice(1); }
 function renderCrumbs(sec) {
@@ -3437,6 +3578,7 @@ function go(sec, arg) {
   { const sb = document.getElementById("sb-sec"); if (sb) sb.textContent = labelOfSec(sec); }
   document.documentElement.style.setProperty("--sec", SECTION_HUE[sec] || "var(--acc)");
   page.classList.toggle("ide-mode", sec === "code");
+  page.classList.toggle("dai-mode", sec === "home");
   document.querySelectorAll(".nav-item").forEach((x) => x.classList.toggle("active", x.dataset.sec === sec));
   main.scrollTop = 0;
   if (arg === undefined) { try { localStorage.setItem("s_last_sec", sec); } catch (_) {} }
@@ -3454,7 +3596,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
@@ -3545,7 +3687,7 @@ document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && (e
 (function () {
   let frame = null; try { frame = JSON.parse(localStorage.getItem("s_frame")); } catch (_) {}
   let last; try { last = localStorage.getItem("s_last_sec"); } catch (_) {}
-  const start = (frame && frame.sec && sections[frame.sec]) ? frame.sec : (last && sections[last] ? last : "dash");
+  const start = (frame && frame.sec && sections[frame.sec]) ? frame.sec : (last && sections[last] ? last : "home");
   go(start);
   if (frame && frame.fields && frame.sec === start) {
     setTimeout(() => { Object.entries(frame.fields).forEach(([id, v]) => { const el = page.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(id) : id)); if (el && v != null) { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); } }); }, 140);
