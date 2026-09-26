@@ -254,7 +254,9 @@ function applyAccent(c) { document.documentElement.style.setProperty("--acc", c)
 const THEMES = [["Cyan", "#00d4ff", "#7c5cff"], ["Matrix", "#22c55e", "#16a34a"], ["Amber", "#f59e0b", "#ef4444"], ["Violet", "#a78bfa", "#6366f1"], ["Crimson", "#ff5c6c", "#f43f5e"], ["Ice", "#38bdf8", "#22d3ee"]];
 function applyPreset(acc, acc2) { document.documentElement.style.setProperty("--acc", acc); document.documentElement.style.setProperty("--acc-2", acc2); try { localStorage.setItem("s_accent", acc); localStorage.setItem("s_accent2", acc2); } catch (_) {} }
 function applyTheme(m) { document.documentElement.setAttribute("data-theme", m); try { localStorage.setItem("s_theme", m); } catch (_) {} }
-try { const a = localStorage.getItem("s_accent"); if (a) applyAccent(a); const a2 = localStorage.getItem("s_accent2"); if (a2) document.documentElement.style.setProperty("--acc-2", a2); applyTheme(localStorage.getItem("s_theme") || "dark"); } catch (_) {}
+// Visual skin: "graphite" = calm neutral-grey console (default), "classic" = original cyber look.
+function applySkin(s) { if (s && s !== "classic") document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); try { localStorage.setItem("s_skin", s); } catch (_) {} }
+try { const a = localStorage.getItem("s_accent"); if (a) applyAccent(a); const a2 = localStorage.getItem("s_accent2"); if (a2) document.documentElement.style.setProperty("--acc-2", a2); applyTheme(localStorage.getItem("s_theme") || "dark"); applySkin(localStorage.getItem("s_skin") || "graphite"); } catch (_) {}
 
 // ---- catalogs ----
 // {target} is substituted with the target-bar value at run time.
@@ -3176,6 +3178,7 @@ const sections = {
     el.innerHTML = `
       <h1>Settings</h1>
       <div class="card"><div class="lbl">Appearance</div>
+        <div class="set-row"><span class="muted">Look</span><span class="seg" id="sk"><button data-k="graphite">Graphite</button><button data-k="classic">Classic</button></span></div>
         <div class="set-row"><span class="muted">Theme</span><span class="seg" id="th"><button data-t="dark">Dark</button><button data-t="light">Light</button></span></div>
         <div class="set-row"><span class="muted">Accent</span><span class="sw" id="ac">${ACCENTS.map((c) => `<button class="swatch" style="background:${c}" data-c="${c}"></button>`).join("")}</span></div>
         <div class="set-row"><span class="muted">Preset</span><span class="theme-presets" id="tp">${THEMES.map((t) => `<button class="theme-chip" data-acc="${t[1]}" data-acc2="${t[2]}"><span class="tc-dot" style="background:linear-gradient(135deg,${t[1]},${t[2]})"></span>${t[0]}</button>`).join("")}</span></div>
@@ -3221,6 +3224,10 @@ const sections = {
     const seg = $("#th", el);
     seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.t === cur));
     seg.onclick = (e) => { const b = e.target.closest("button[data-t]"); if (!b) return; applyTheme(b.dataset.t); seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); };
+    const curSkin = (() => { try { return localStorage.getItem("s_skin") || "graphite"; } catch (_) { return "graphite"; } })();
+    const skseg = $("#sk", el);
+    skseg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.k === curSkin));
+    skseg.onclick = (e) => { const b = e.target.closest("button[data-k]"); if (!b) return; applySkin(b.dataset.k); skseg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); };
     const sv = $("#sv", el);
     sv.querySelectorAll("button").forEach((b) => b.classList.toggle("on", (b.dataset.v === "1") === saveOn()));
     sv.onclick = (e) => { const b = e.target.closest("button[data-v]"); if (!b) return; try { localStorage.setItem("s_save", b.dataset.v); } catch (_) {} sv.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); };

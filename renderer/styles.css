@@ -1015,3 +1015,144 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
   * { box-shadow:none !important; text-shadow:none !important; animation:none !important; }
   @page { margin:1.5cm; }
 }
+
+/* ============================================================
+   GRAPHITE SKIN  —  data-skin="graphite"
+   A calm, neutral-grey console: quiet dark sidebar, a centered
+   conversation column, a rounded floating composer, and
+   borderless assistant messages. Inspired by modern chat UIs
+   but carrying Darknode's own signature accent + mono identity.
+   Layers on top of dark/light; the user's chosen accent still
+   overrides --acc. Everything here is scoped to the skin.
+   ============================================================ */
+:root[data-skin="graphite"]{
+  --acc:#33d6a6;              /* Darknode graphite signature (mint-teal) */
+  --acc-2:#4bb8ff;
+  --bg:#1c1c1c;              /* main conversation surface */
+  --bg-2:#161616;
+  --card:#242424;
+  --card2:#2c2c2c;
+  --surface-3:#363636;
+  --line:#383838;
+  --line-2:#4a4a4a;
+  --txt:#ececec;
+  --txt-2:#c4c4c4;
+  --mut:#8f8f8f;
+  --sh-1:0 1px 2px rgba(0,0,0,.3);
+  --sh-2:0 10px 30px -14px rgba(0,0,0,.65);
+  --sh-pop:0 30px 80px -20px rgba(0,0,0,.8);
+  --r-sm:8px;--r:12px;--r-lg:16px;--r-xl:24px;
+}
+:root[data-skin="graphite"][data-theme="light"]{
+  --bg:#ffffff;--bg-2:#f7f7f8;
+  --card:#f7f7f8;--card2:#ececee;--surface-3:#e2e2e5;
+  --line:#e6e6e8;--line-2:#d2d2d6;
+  --txt:#1e1e1e;--txt-2:#40414f;--mut:#6e6e80;
+  --sh-1:0 1px 2px rgba(20,20,30,.06);
+  --sh-2:0 10px 30px -14px rgba(20,20,30,.18);
+}
+
+/* Calm the canvas: drop the ambient glow + grid overlay */
+:root[data-skin="graphite"] .shell::before,
+:root[data-skin="graphite"] main::before{display:none!important}
+:root[data-skin="graphite"] .shell{background:var(--bg)}
+
+/* Sidebar: flat, a touch darker than the main surface (chat-app feel) */
+:root[data-skin="graphite"] .sidebar{
+  background:#171717;backdrop-filter:none;border-right:1px solid var(--line);width:250px;
+}
+:root[data-skin="graphite"][data-theme="light"] .sidebar{background:#f9f9f9}
+:root[data-skin="graphite"] .brand-name{font-weight:700}
+:root[data-skin="graphite"] .brand-logo{box-shadow:0 0 0 1px var(--line)}
+:root[data-skin="graphite"] .brand-tag{color:var(--mut);border-color:var(--line-2)}
+:root[data-skin="graphite"] .nav-group-h{color:var(--mut);opacity:.75}
+:root[data-skin="graphite"] .nav-item{border-radius:8px;color:var(--txt-2);font-weight:500}
+:root[data-skin="graphite"] .nav-item:hover{background:color-mix(in srgb,var(--txt) 8%,transparent);color:var(--txt)}
+:root[data-skin="graphite"] .nav-item:not(.active):hover::before{display:none}
+:root[data-skin="graphite"] .nav-item.active{
+  background:color-mix(in srgb,var(--txt) 11%,transparent);color:var(--txt);font-weight:600;
+}
+:root[data-skin="graphite"] .nav-item.active .ni{color:var(--acc);opacity:1}
+:root[data-skin="graphite"] .nav-item.active::before{display:none}   /* no left accent rail */
+
+/* Header: flat, quiet */
+:root[data-skin="graphite"] .apphead{
+  background:color-mix(in srgb,var(--bg) 88%,transparent);border-bottom:1px solid var(--line);
+}
+:root[data-skin="graphite"] .target-lbl{color:var(--mut)}
+
+/* Headings: solid, not gradient — reads calmer */
+:root[data-skin="graphite"] h1{
+  background:none;-webkit-text-fill-color:currentColor;color:var(--txt);font-weight:700;letter-spacing:-.02em;
+}
+
+/* Buttons: flat solid accent, no sheen/glow */
+:root[data-skin="graphite"] .btn{
+  background:var(--acc);color:#04140f;box-shadow:none;border-radius:10px;font-weight:600;
+}
+:root[data-skin="graphite"] .btn::after{display:none!important;animation:none!important}
+:root[data-skin="graphite"] .btn:hover{filter:brightness(1.06);box-shadow:none}
+:root[data-skin="graphite"] .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--line-2)}
+:root[data-skin="graphite"] .btn.ghost:hover{background:color-mix(in srgb,var(--txt) 8%,transparent);box-shadow:none}
+:root[data-skin="graphite"] .btn.danger{background:var(--bad);color:#fff}
+
+/* Cards: flat, softer */
+:root[data-skin="graphite"] .card{background:var(--card);box-shadow:none}
+
+/* ---- Assistant: a centered conversation column ---- */
+:root[data-skin="graphite"] .ag-scroll{padding:0 20px}
+:root[data-skin="graphite"] .ag-shell > .ag-scroll > h1,
+:root[data-skin="graphite"] .ag-shell > .ag-scroll > .sub,
+:root[data-skin="graphite"] .ag-plan,
+:root[data-skin="graphite"] .ag-feed,
+:root[data-skin="graphite"] .ag-runs{max-width:768px;margin-left:auto;margin-right:auto}
+:root[data-skin="graphite"] .ag-feed{gap:18px;margin-top:20px}
+
+/* Assistant turns: user = soft rounded bubble; AI = borderless full-width */
+:root[data-skin="graphite"] .ag-step{
+  background:transparent;border:none;padding:2px 0;animation:agIn .18s var(--ease);
+}
+:root[data-skin="graphite"] .ag-step.ag-user{
+  background:var(--card2);color:var(--txt);border-radius:20px;padding:11px 16px;font-weight:400;
+  max-width:80%;margin-left:auto;box-shadow:none;
+}
+:root[data-skin="graphite"][data-theme="light"] .ag-step.ag-user{background:#ececee}
+:root[data-skin="graphite"] .msg.ai{background:transparent;border:none;padding:0}
+:root[data-skin="graphite"] .msg.you{background:var(--card2);color:var(--txt);font-weight:400}
+/* Tool output keeps a subtle frame so results stay legible */
+:root[data-skin="graphite"] .msg.tool{background:var(--bg-2);border:1px solid var(--line);border-radius:12px}
+
+/* ---- Composer: a rounded, floating pill, centered under the column ---- */
+:root[data-skin="graphite"] .ag-inputbar{
+  max-width:768px;margin:12px auto 16px;background:var(--card);
+  border:1px solid var(--line-2);border-radius:26px;box-shadow:var(--sh-2);padding:14px 16px;
+}
+:root[data-skin="graphite"] .ag-inputbar .in,
+:root[data-skin="graphite"] .ag-inputbar textarea.in{
+  background:transparent;border:none;box-shadow:none!important;
+}
+:root[data-skin="graphite"] .ag-inputbar .in:focus{box-shadow:none!important}
+:root[data-skin="graphite"] .ag-inputbar .f{background:var(--card2);border:1px solid var(--line)}
+
+/* Segmented controls + inputs: neutral */
+:root[data-skin="graphite"] .seg{background:var(--card2);border-color:var(--line)}
+:root[data-skin="graphite"] .seg button.on{background:var(--acc);color:#04140f}
+:root[data-skin="graphite"] .chip{background:color-mix(in srgb,var(--txt) 7%,transparent);border-color:var(--line-2);color:var(--txt-2)}
+
+/* Thinner, neutral scrollbars */
+:root[data-skin="graphite"] *::-webkit-scrollbar{width:8px;height:8px}
+:root[data-skin="graphite"] *::-webkit-scrollbar-thumb{background:var(--line-2)}
+
+/* Boot screen: strip the cyberpunk layers for a clean fade-in */
+:root[data-skin="graphite"] #bootscreen{background:#171717}
+:root[data-skin="graphite"] #bootscreen::before,
+:root[data-skin="graphite"] #bootscreen::after,
+:root[data-skin="graphite"] .boot-rain,
+:root[data-skin="graphite"] .boot-grid,
+:root[data-skin="graphite"] .boot-sweep,
+:root[data-skin="graphite"] .boot-scan,
+:root[data-skin="graphite"] .boot-vignette{display:none!important}
+:root[data-skin="graphite"] .boot-logo{
+  background:none;-webkit-text-fill-color:currentColor;color:var(--txt);
+  filter:none;animation:none;
+}
