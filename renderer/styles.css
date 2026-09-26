@@ -1156,3 +1156,51 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
   background:none;-webkit-text-fill-color:currentColor;color:var(--txt);
   filter:none;animation:none;
 }
+
+/* ---- Graphite refinements: clean boot splash + calmer conversation ---- */
+
+/* A minimal branded boot: logo, tagline, a slim mint progress bar.
+   Everything cyberpunk (rings, glitch, scanlines, flicker, terminal log,
+   "ACCESS GRANTED") is suppressed so the launch feels quiet and modern. */
+:root[data-skin="graphite"] .boot-inner{animation:none}
+:root[data-skin="graphite"] .boot-ring,
+:root[data-skin="graphite"] .boot-flash,
+:root[data-skin="graphite"] .boot-lines,
+:root[data-skin="graphite"] .boot-granted{display:none!important}
+:root[data-skin="graphite"] .boot-logo.glitch::before,
+:root[data-skin="graphite"] .boot-logo.glitch::after{display:none!important;content:none!important}
+:root[data-skin="graphite"] .boot-tag{color:var(--mut);letter-spacing:.28em;margin:10px 0 4px;font-size:.68rem}
+:root[data-skin="graphite"] .boot-sys{color:var(--mut);opacity:.7;font-size:.72rem;margin-top:2px}
+:root[data-skin="graphite"] .boot-barwrap{display:flex;align-items:center;gap:12px;justify-content:center;margin-top:26px}
+:root[data-skin="graphite"] .boot-bar{width:min(260px,60vw);height:2px;margin:0;background:color-mix(in srgb,var(--txt) 14%,transparent);border-radius:2px}
+:root[data-skin="graphite"] .boot-bar>span{background:var(--acc);box-shadow:none;border-radius:2px}
+:root[data-skin="graphite"] .boot-pct{color:var(--mut);font-family:ui-monospace,monospace;font-size:.72rem}
+:root[data-skin="graphite"][data-theme="light"] #bootscreen{background:#f9f9f9}
+
+/* Assistant conversation: the AI's answer reads as plain text, not a card.
+   Thinking + final lose their frames; tool work keeps a light frame. */
+:root[data-skin="graphite"] .ag-final{border:none;box-shadow:none;background:transparent;padding:2px 0}
+:root[data-skin="graphite"] .ag-final-h{color:var(--mut);font-weight:600}
+:root[data-skin="graphite"] .ag-think{border:none;background:transparent;color:var(--txt-2);padding:2px 0}
+:root[data-skin="graphite"] .ag-call{border-left:2px solid var(--line-2);background:transparent;padding-left:12px}
+:root[data-skin="graphite"] .msg.ai{line-height:1.65}
+:root[data-skin="graphite"] .msg.ai p{margin:0 0 12px}
+:root[data-skin="graphite"] .msg.ai p:last-child{margin-bottom:0}
+
+/* Code blocks: softer, rounder, monospace-legible in both themes */
+:root[data-skin="graphite"] .ag-final .code-block,
+:root[data-skin="graphite"] .ag-think .code-block,
+:root[data-skin="graphite"] .msg.ai .code-block{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0;
+}
+:root[data-skin="graphite"][data-theme="dark"] .ag-final .code-block,
+:root[data-skin="graphite"][data-theme="dark"] .ag-think .code-block,
+:root[data-skin="graphite"][data-theme="dark"] .msg.ai .code-block{background:#101010}
+:root[data-skin="graphite"] .cb-copy{border-radius:8px;border-color:var(--line-2)}
+
+/* Composer: give the controls room to breathe inside the rounded pill */
+:root[data-skin="graphite"] .ag-inputbar .run-bar{margin-top:8px}
+:root[data-skin="graphite"] .ag-inputbar .pb-f > span{color:var(--mut);font-size:.72rem}
+:root[data-skin="graphite"] .ag-inputbar textarea.in{font-size:.92rem;line-height:1.55;padding:4px 2px}
+:root[data-skin="graphite"] .ag-presets .chip,
+:root[data-skin="graphite"] #agpresets .chip{border-radius:16px}
