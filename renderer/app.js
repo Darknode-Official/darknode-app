@@ -1027,6 +1027,30 @@ const sections = {
     const perm = () => { try { return localStorage.getItem("s_perm") || "auto"; } catch (_) { return "auto"; } };
     const hcwd = { dir: "" };
     S.sysinfo().then((s) => { if (!hcwd.dir && s) hcwd.dir = s.home; }).catch(() => {});
+    // ---- On-machine coding brain (window.NEXUS_CODE, vendored from the Nexus CLI engine) ----
+    // The browser (darknode.ai) can never touch real files; the app can. These helpers give the
+    // home agent a ranked repo map + symbol index, walked over the real filesystem via IPC.
+    const NC = () => (typeof window !== "undefined" ? window.NEXUS_CODE : null);
+    const hMap = { root: null, map: null };
+    const hInvalidateMap = () => { hMap.root = null; hMap.map = null; };
+    async function hBuildMap(root) {
+      const nc = NC(); if (!nc) throw new Error("coding engine not loaded");
+      root = String(root || hcwd.dir || ".").replace(/\/+$/, "") || ".";
+      const walk = "find . -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/.next/*' -not -path '*/vendor/*' -not -path '*/.venv/*' -not -path '*/target/*' 2>/dev/null | head -400";
+      const lr = await S.agentExec(walk, root);
+      if (!lr.ok) throw new Error(lr.error || "could not walk " + root);
+      const rel = (lr.output || "").split("\n").map((s) => s.replace(/^\.\//, "").trim()).filter(Boolean).filter((p) => nc.isSourceFile(p));
+      const pick = rel.slice(0, 180);
+      const files = [];
+      for (const p of pick) { const r = await S.fsRead(root + "/" + p); files.push({ path: p, content: r.ok ? r.data : "" }); }
+      const map = nc.buildRepoMap(files); map._truncated = rel.length > pick.length; map._root = root;
+      hMap.root = root; hMap.map = map; return map;
+    }
+    async function hGetMap(root) {
+      root = String(root || hcwd.dir || ".").replace(/\/+$/, "") || ".";
+      if (hMap.map && hMap.root === root) return hMap.map;
+      return hBuildMap(root);
+    }
     const HTOOLS = {
       list_dir: { danger: false, desc: "list files/folders at a path (default: working folder)", params: { properties: { path: {} } },
         run: async (a) => { const r = await S.fsList(a.path || hcwd.dir); return r.ok ? { path: r.path, items: r.items.map((i) => (i.dir ? "[dir] " : "") + i.name) } : { error: r.error }; } },
@@ -1044,6 +1068,16 @@ const sections = {
         run: async (a) => { const r = await S.httpReq({ method: a.method || "GET", url: a.url, headers: a.headers || {}, body: a.body }); return r.ok ? { status: r.status, headers: r.headers, body: hclip(r.body, 8000) } : { error: r.error }; } },
       search_code: { danger: false, desc: "recursively grep for a pattern under a path", params: { properties: { pattern: {}, path: {} }, required: ["pattern"] },
         run: async (a) => { const r = await S.agentExec("grep -rIn --exclude-dir=.git --exclude-dir=node_modules -e " + hshq(a.pattern) + " " + hshq(a.path || "."), hcwd.dir); return r.ok ? { matches: hclip(r.output, 8000) } : { error: r.error }; } },
+      repo_map: { danger: false, desc: "build a ranked map of a project: source files + a per-language symbol outline (functions/classes/types). Read this FIRST to orient yourself before editing — the website can't see files, this app can", params: { properties: { path: {} } },
+        run: async (a) => { const nc = NC(); if (!nc) return { error: "coding engine not loaded" }; let map; try { map = await hGetMap(a.path); } catch (e) { return { error: (e && e.message) || "map failed" }; } return { root: map._root, files: map.fileCount, symbols: map.symbolCount, truncated: !!map._truncated, map: nc.renderRepoMap(map, { maxFiles: 60 }) }; } },
+      find_symbol: { danger: false, desc: "find where a symbol (function/class/type) is DEFINED across the project — go-to-definition without a language server; ranks exact matches first", params: { properties: { name: {}, path: {} }, required: ["name"] },
+        run: async (a) => { const nc = NC(); if (!nc) return { error: "coding engine not loaded" }; if (!a.name) return { error: "find_symbol needs a 'name'" }; let map; try { map = await hGetMap(a.path); } catch (e) { return { error: (e && e.message) || "map failed" }; } const hits = nc.findSymbol(map, a.name); return hits.length ? { name: a.name, hits: hits.map((h) => h.path + ":" + h.line + "  " + h.kind + " " + h.name) } : { name: a.name, hits: [], note: "no definition found in the mapped source files" }; } },
+      multi_edit: { danger: true, desc: "apply several find/replace edits to ONE file atomically (all-or-nothing). edits is an array of {find, replace, replaceAll?}. Never guesses: a find that is missing or ambiguous fails without touching the file. Falls back to whitespace-flexible matching only when unambiguous", params: { properties: { path: {}, edits: {} }, required: ["path", "edits"] },
+        run: async (a) => { const nc = NC(); if (!nc) return { error: "coding engine not loaded" }; if (!a.path || !Array.isArray(a.edits) || !a.edits.length) return { error: "multi_edit needs 'path' and a non-empty 'edits' array of {find, replace}" }; const rd = await S.fsRead(a.path); if (!rd.ok) return { error: rd.error }; const res = nc.applyEditsFlexible(rd.data, a.edits); if (!res.ok) return { error: res.error }; const wr = await S.fsWrite(a.path, res.content); if (!wr.ok) return { error: wr.error }; hInvalidateMap(); return { ok: true, path: a.path, edits: res.applied.length, modes: res.applied.map((x) => x.mode) }; } },
+      apply_patch: { danger: true, desc: "apply a unified diff (git-style patch) across one or more files; anchors each hunk on its context so drifted @@ line numbers still apply. Provide the full patch text in 'patch'", params: { properties: { patch: {} }, required: ["patch"] },
+        run: async (a) => { const nc = NC(); if (!nc) return { error: "coding engine not loaded" }; const patch = String((a && (a.patch || a.diff)) || ""); if (!patch.trim()) return { error: "apply_patch needs a 'patch' (unified diff) string" }; let parsed; try { parsed = nc.parsePatch(patch); } catch (e) { return { error: "could not parse patch: " + ((e && e.message) || e) }; } if (!parsed.length) return { error: "no file hunks found in patch" }; const base = String(hcwd.dir || "").replace(/\/+$/, ""); const results = []; for (const fp of parsed) { const target = fp.file; if (!target) { results.push({ file: null, ok: false, error: "hunk has no target file" }); continue; } const abs = /^\//.test(target) ? target : (base ? base + "/" + target : target); const rd = await S.fsRead(abs); const ap = nc.applyHunks(rd.ok ? rd.data : "", fp.hunks); if (!ap.ok) { results.push({ file: target, ok: false, error: ap.error }); continue; } const wr = await S.fsWrite(abs, ap.content); results.push({ file: target, ok: wr.ok, error: wr.ok ? undefined : wr.error }); } hInvalidateMap(); const failed = results.filter((r) => !r.ok); return failed.length ? { ok: false, results, error: failed.length + " file(s) failed to patch (all changes are per-file atomic)" } : { ok: true, files: results.length, results }; } },
+      verify: { danger: true, desc: "detect and RUN this project's own test/build/lint command to check your work compiles and passes — the edit→run→observe→fix loop that separates a coding agent from a code generator. Optional kind: test|build|lint|typecheck", params: { properties: { kind: {}, path: {} } },
+        run: async (a) => { const nc = NC(); if (!nc) return { error: "coding engine not loaded" }; const root = String(a.path || hcwd.dir || ".").replace(/\/+$/, "") || "."; const lr = await S.fsList(root); if (!lr.ok) return { error: lr.error }; const entries = lr.items.map((i) => i.name); const contents = {}; for (const n of ["package.json", "Makefile", "makefile", "GNUmakefile"]) if (entries.includes(n)) { const r = await S.fsRead(root + "/" + n); if (r.ok) contents[n] = r.data; } const cmds = nc.detectProjectCommands(entries, contents); const chosen = (a.kind && cmds[a.kind]) ? { kind: a.kind, cmd: cmds[a.kind] } : nc.pickVerify(cmds); if (!chosen) return { detected: cmds, note: "no runnable test/build/lint command detected for this project" }; const r = await S.agentExec(chosen.cmd, root, undefined, DAI_LS("s_auto_pass", "")); return r.ok ? { ran: chosen.cmd, kind: chosen.kind, exit: r.code, passed: r.code === 0, output: hclip(r.output, 8000) } : { error: r.error, ran: chosen.cmd }; } },
     };
     // Pull in tools from any configured MCP servers (namespaced mcp__server__tool), same as the Assistant.
     let hMcpDone = false;
@@ -1065,7 +1099,7 @@ const sections = {
     // Build the agent system prompt: identity + tool protocol + the live tool list.
     function buildSys() {
       const list = Object.keys(HTOOLS).map((k) => { const t = HTOOLS[k]; const p = Object.keys((t.params && t.params.properties) || {}).join(", "); return "- " + k + "(" + p + ") — " + t.desc; }).join("\n");
-      return DAI_SYS + "\n\nYou are an agent that takes real actions on this machine to accomplish the user's goal — you do not just describe steps, you perform them, like a hands-on engineer. You have these tools:\n" + list + "\n\nTo use a tool, reply with ONLY a JSON object and nothing else: {\"tool\":\"<name>\",\"args\":{...}}. You then receive the tool's result and may call more tools, one at a time. When the task is finished, reply with your final answer as normal prose (never JSON). Prefer acting over explaining. Read files before editing them. Use absolute paths.";
+      return DAI_SYS + "\n\nYou are an agent that takes real actions on this machine to accomplish the user's goal — you do not just describe steps, you perform them, like a hands-on engineer. You have these tools:\n" + list + "\n\nTo use a tool, reply with ONLY a JSON object and nothing else: {\"tool\":\"<name>\",\"args\":{...}}. You then receive the tool's result and may call more tools, one at a time. When the task is finished, reply with your final answer as normal prose (never JSON). Prefer acting over explaining. Use absolute paths.\n\nCoding workflow (you run on the user's real machine — use it):\n- Orient before you edit: use repo_map to see the project's files and symbols, and find_symbol to jump to where something is defined.\n- Edit precisely: prefer multi_edit (atomic, all-or-nothing find/replace on one file) or apply_patch (a unified diff) over rewriting whole files with write_file. Read a file before editing it.\n- Verify your work: after changing code, run verify to execute the project's own tests/build and confirm you didn't break anything, then fix and re-verify. Don't declare success blind.";
     }
     function addToolCard(name, args) {
       const row = document.createElement("div"); row.className = "dai-tool running";
