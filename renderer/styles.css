@@ -1304,3 +1304,30 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .dai-tool-out.err{color:#ff7a7a}
 .dai-tool-confirm{display:flex;align-items:center;gap:10px;padding:10px 12px}
 .dai-tool-confirm span{flex:1;color:var(--txt-2)}
+
+/* Darknode AI home chat: ChatGPT-style white canvas with black text, regardless
+   of the app's dark chrome/skin. Scoped to .dai and forced past skin selectors. */
+.dai{
+  --bg:#ffffff; --txt:#0d0d0d; --txt-2:#676773; --line:#e6e6e8;
+  --card:#f7f7f8; --card2:#f4f4f5; --acc-line:#c9c9cf; --acc-soft:rgba(0,0,0,.05);
+  background:#ffffff !important; color:#0d0d0d;
+}
+.dai .dai-greet, .dai .dai-brand{color:#0d0d0d !important}
+.dai .dai-sub, .dai .dai-foot, .dai .dai-think{color:#676773 !important}
+.dai .dai-txt{color:#0d0d0d}
+.dai .dai-msg.user .dai-txt{background:#f4f4f5 !important;color:#0d0d0d !important;font-weight:400}
+.dai .dai-msg.ai .dai-txt{background:transparent !important}
+.dai .dai-composer{background:#ffffff !important;border:1px solid #e6e6e8 !important;border-radius:26px}
+.dai .dai-composer:focus-within{border-color:#c9c9cf !important;box-shadow:0 0 0 3px rgba(0,0,0,.04) !important}
+.dai .dai-input, .dai #dai-input{color:#0d0d0d !important}
+.dai #dai-input::placeholder{color:#9a9aa5 !important}
+.dai .dai-send{background:#0d0d0d !important;color:#ffffff !important}
+.dai .dai-send:hover{opacity:1;filter:brightness(1.25)}
+.dai .dai-dot{background:#10a37f !important;box-shadow:none !important}
+.dai .dai-new, .dai .dai-pick select{color:#0d0d0d !important;border-color:#e6e6e8 !important;background:#ffffff !important}
+.dai .dai-chip{background:#f7f7f8 !important;border-color:#e6e6e8 !important}
+.dai .dai-chip b{color:#0d0d0d !important}
+.dai .dai-tool{background:#f7f7f8 !important;border-color:#e6e6e8 !important}
+.dai .dai-tool-head{color:#0d0d0d !important}
+.dai .dai-tool-head:hover{background:#efeff1 !important}
+.dai .dai-txt .code-block, .dai .dai-txt pre{background:#0d0d0d !important}
