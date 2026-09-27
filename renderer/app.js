@@ -1595,8 +1595,8 @@ const sections = {
         <div class="dh-copy">
           <div class="dh-eyebrow"><span class="dot-live"></span> SYSTEM ONLINE</div>
           <h1>Welcome to <span class="grad-text">Darknode</span></h1>
-          <p class="sub">Run real tools, a live terminal, a code workbench, and local AI &mdash; right on this machine.</p>
-          <div class="dh-actions"><button class="btn" data-go="agent">Run the Agent</button><button class="btn ghost" data-go="runner">Open Terminal</button><button class="btn ghost" data-go="lab">Practice targets</button></div>
+          <p class="sub">Everything here <b>runs on your machine</b> &mdash; real shells, real scans, local AI, and 70+ offline tools. The website can only show these; the app runs them for real.</p>
+          <div class="dh-actions"><button class="btn" data-go="agent">Run the Agent</button><button class="btn ghost" data-go="runner">Open Terminal</button><button class="btn ghost" data-go="flagship">Offline toolbox</button></div>
         </div>
         <div class="dh-term">
           <div class="dh-term-bar"><span class="tw-dot r"></span><span class="tw-dot y"></span><span class="tw-dot g"></span><span class="dh-term-t">darknode</span></div>
@@ -1626,6 +1626,7 @@ const sections = {
         </div>
         <h2>Build &amp; reference</h2>
         <div class="grid">
+          ${qa("flagship", "Offline toolbox", "70+ encoders, hashes, ciphers — no internet")}
           ${qa("payloads", "Payloads", "Reverse shells, listeners, msfvenom")}
           ${qa("encode", "Encode / hash", "Base64, hex, URL, JWT, SHA")}
           ${qa("refs", "Reference", "Regex tester, status codes, ports")}
@@ -2046,14 +2047,42 @@ const sections = {
     // mirrors the site's full ~1,000-tool catalog, not just the platforms. Each opens
     // via the same ?app=1 guest deep-link.
     if (Array.isArray(window.WT_MINI)) GROUPS.push(...window.WT_MINI);
-    const n = GROUPS.reduce((a, [, items]) => a + items.length, 0);
-    const gridHtml = GROUPS.map(([g, items]) => `<div class="arse-cat"><div class="cloud-cat">${esc(g)}</div><div class="arse-grid">${items.map(([sec, label]) => `<button class="arse-card" data-sec="${esc(sec)}" data-label="${esc(label)}"><div class="an">${esc(label)} <span class="ax">&#8599;</span></div><div class="au">darknode.ai/${esc(sec)}</div></button>`).join("")}</div></div>`).join("");
+    const platformN = GROUPS.reduce((a, [, items]) => a + items.length, 0);
+    // Native offline toolbox — these RUN in the app (no internet, no webview). This is
+    // the app's edge over the website, which can only *show* these same tools.
+    const NATIVE = Array.isArray(window.WT_NATIVE) ? window.WT_NATIVE : [];
+    const nativeN = NATIVE.reduce((a, [, t]) => a + t.length, 0);
+    const NT_INDEX = {}; NATIVE.forEach(([, t]) => t.forEach((x) => (NT_INDEX[x.id] = x)));
+
+    const webGridHtml = GROUPS.map(([g, items]) => `<div class="arse-cat"><div class="cloud-cat">${esc(g)}</div><div class="arse-grid">${items.map(([sec, label]) => `<button class="arse-card" data-sec="${esc(sec)}" data-label="${esc(label)}"><div class="an">${esc(label)} <span class="ax">&#8599;</span></div><div class="au">darknode.ai/${esc(sec)}</div></button>`).join("")}</div></div>`).join("");
+    const nativeGridHtml = NATIVE.map(([g, tools]) => `<div class="arse-cat"><div class="cloud-cat">${esc(g)}</div><div class="arse-grid">${tools.map((t) => `<button class="arse-card" data-nt="${esc(t.id)}" data-label="${esc(t.name)}" data-desc="${esc(t.desc || "")}"><div class="an">${esc(t.name)}</div><div class="au">${esc(t.desc || "")}</div></button>`).join("")}</div></div>`).join("");
+
     el.innerHTML = `
       <div id="wt-catalog">
         <h1>Web tools</h1>
-        <p class="sub">${n} Darknode tools, embedded live inside the app — PROMETHEUS, CITADEL, HYDRA and the full catalog. Click any tool to open it here.</p>
+        <p class="sub"><b>${nativeN} tools run offline right here in the app</b> — no browser, no network, nothing leaves this machine. ${platformN} larger platforms (PROMETHEUS, CITADEL, HYDRA…) open live from darknode.ai.</p>
+        <div class="seg" id="wt-tabs" style="margin-bottom:12px">
+          <button data-tab="native" class="on">Toolbox &middot; offline (${nativeN})</button>
+          <button data-tab="web">Platforms &middot; live (${platformN})</button>
+        </div>
         <input class="in" id="wt-search" placeholder="Filter tools…" spellcheck="false" style="max-width:340px;margin-bottom:12px">
-        <div id="wt-grid">${gridHtml}</div>
+        <div id="wt-native-grid">${nativeGridHtml}</div>
+        <div id="wt-web-grid" hidden>${webGridHtml}</div>
+      </div>
+      <div id="wt-runner" hidden style="max-width:820px">
+        <div class="run-bar" style="gap:8px;padding:0 0 10px;align-items:center">
+          <button class="btn ghost sm" id="wt-nt-back">&larr; All tools</button>
+          <b id="wt-nt-title" style="flex:1"></b>
+          <span class="pill" style="font-size:.66rem;letter-spacing:.06em;color:var(--ok)">OFFLINE</span>
+        </div>
+        <p class="muted" id="wt-nt-desc" style="margin:0 0 12px;font-size:.85rem"></p>
+        <div class="card">
+          <label class="pb-f" style="margin-bottom:8px"><span>Input</span><textarea class="in" id="wt-nt-in" rows="4" spellcheck="false"></textarea></label>
+          <div id="wt-nt-fields" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"></div>
+          <div class="run-bar" style="margin-top:10px;gap:8px"><button class="btn" id="wt-nt-run">Run</button><button class="btn ghost sm" id="wt-nt-copy">copy output</button></div>
+          <div class="run-status" id="wt-nt-stat" style="margin-top:8px"></div>
+          <div class="run-bar"><pre class="out" id="wt-nt-out" style="flex:1;min-height:5em">output</pre></div>
+        </div>
       </div>
       <div id="wt-viewer" hidden style="display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:420px">
         <div class="run-bar" style="gap:8px;padding:4px 0 8px;align-items:center">
@@ -2064,21 +2093,56 @@ const sections = {
         </div>
         <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></webview>
       </div>`;
-    const cat = $("#wt-catalog", el), viewer = $("#wt-viewer", el), wv = $("#wt-view", el), title = $("#wt-title", el);
-    // `?app=1` = guest deep-link: the site auto-enters its public Test Mode and routes
-    // straight to this tool (without it, a fresh webview hits the marketing landing / login).
+    const cat = $("#wt-catalog", el), viewer = $("#wt-viewer", el), runner = $("#wt-runner", el), wv = $("#wt-view", el), title = $("#wt-title", el);
+    const nativeGrid = $("#wt-native-grid", el), webGrid = $("#wt-web-grid", el), search = $("#wt-search", el), tabs = $("#wt-tabs", el);
+    let tab = "native";
+
+    // ---- tab switching ----
+    tabs.onclick = (e) => { const b = e.target.closest("[data-tab]"); if (!b) return; tab = b.dataset.tab; tabs.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); nativeGrid.hidden = tab !== "native"; webGrid.hidden = tab !== "web"; search.placeholder = tab === "native" ? "Filter offline tools…" : "Filter platforms…"; applyFilter(); };
+
+    // ---- native runner ----
+    const ntTitle = $("#wt-nt-title", el), ntDesc = $("#wt-nt-desc", el), ntIn = $("#wt-nt-in", el), ntFields = $("#wt-nt-fields", el), ntOut = $("#wt-nt-out", el), ntStat = $("#wt-nt-stat", el);
+    let curTool = null;
+    const openNative = (id) => {
+      const t = NT_INDEX[id]; if (!t) return; curTool = t;
+      ntTitle.textContent = t.name; ntDesc.textContent = t.desc || ""; ntOut.textContent = "output"; ntStat.textContent = ""; ntStat.className = "run-status";
+      ntFields.innerHTML = (t.fields || []).map((f) => f.type === "select"
+        ? `<label class="pb-f"><span>${esc(f.label)}</span><select class="f" data-k="${esc(f.k)}">${f.options.map(([v, l]) => `<option value="${esc(v)}"${v === (f.def || "") ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`
+        : `<label class="pb-f"><span>${esc(f.label)}</span><input class="in" data-k="${esc(f.k)}" type="${f.type === "number" ? "number" : "text"}" placeholder="${esc(f.ph || "")}" value="${esc(f.def || "")}" spellcheck="false"></label>`).join("");
+      cat.hidden = true; runner.hidden = false;
+      ntIn.focus();
+    };
+    const runNative = async () => {
+      if (!curTool) return;
+      const opts = {}; ntFields.querySelectorAll("[data-k]").forEach((f) => (opts[f.dataset.k] = f.value));
+      try { const r = await curTool.run(ntIn.value, opts); ntOut.textContent = r == null ? "" : String(r); ntStat.className = "run-status ok"; ntStat.textContent = "done"; }
+      catch (err) { ntStat.className = "run-status bad"; ntStat.textContent = (err && err.message) || "failed"; ntOut.textContent = "output"; }
+    };
+    $("#wt-nt-run", el).onclick = runNative;
+    ntIn.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runNative(); } });
+    ntFields.addEventListener("change", () => { if (curTool && ntIn.value) runNative(); });
+    $("#wt-nt-copy", el).onclick = (e) => { navigator.clipboard?.writeText(ntOut.textContent); e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy output"), 1200); };
+    $("#wt-nt-back", el).onclick = () => { runner.hidden = true; cat.hidden = false; curTool = null; };
+    nativeGrid.onclick = (e) => { const b = e.target.closest("[data-nt]"); if (b) openNative(b.dataset.nt); };
+
+    // ---- live platform webview ----
+    // `?app=1` = guest deep-link: the site auto-enters Test Mode and routes straight to
+    // the tool (without it, a fresh webview hits the marketing landing / login).
     const toUrl = (sec) => D + sec + "?app=1";
     const openTool = (sec) => { title.textContent = "darknode.ai/" + sec; cat.hidden = true; viewer.hidden = false; const u = toUrl(sec); try { wv.loadURL ? wv.loadURL(u) : (wv.src = u); } catch (_) { wv.src = u; } };
-    $("#wt-grid", el).onclick = (e) => { const b = e.target.closest("[data-sec]"); if (b) openTool(b.dataset.sec); };
+    webGrid.onclick = (e) => { const b = e.target.closest("[data-sec]"); if (b) openTool(b.dataset.sec); };
     $("#wt-back", el).onclick = () => { viewer.hidden = true; cat.hidden = false; try { wv.loadURL ? wv.loadURL("about:blank") : (wv.src = "about:blank"); } catch (_) {} };
     $("#wt-reload", el).onclick = () => { try { wv.reload(); } catch (_) {} };
     $("#wt-ext", el).onclick = () => { try { S.openExternal(wv.getURL()); } catch (_) {} };
-    const search = $("#wt-search", el);
-    search.oninput = () => {
+
+    // ---- search (scoped to the active tab) ----
+    function applyFilter() {
       const q = search.value.trim().toLowerCase();
-      el.querySelectorAll(".arse-card").forEach((c) => { const hit = !q || c.dataset.label.toLowerCase().includes(q) || c.dataset.sec.includes(q); c.style.display = hit ? "" : "none"; });
-      el.querySelectorAll(".arse-cat").forEach((g) => { const any = [...g.querySelectorAll(".arse-card")].some((c) => c.style.display !== "none"); g.style.display = any ? "" : "none"; });
-    };
+      const grid = tab === "native" ? nativeGrid : webGrid;
+      grid.querySelectorAll(".arse-card").forEach((c) => { const hit = !q || (c.dataset.label || "").toLowerCase().includes(q) || (c.dataset.desc || c.dataset.sec || "").toLowerCase().includes(q); c.style.display = hit ? "" : "none"; });
+      grid.querySelectorAll(".arse-cat").forEach((g) => { const any = [...g.querySelectorAll(".arse-card")].some((c) => c.style.display !== "none"); g.style.display = any ? "" : "none"; });
+    }
+    search.oninput = applyFilter;
   },
 
   arsenal(el) {
