@@ -2051,7 +2051,10 @@ const sections = {
         <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></webview>
       </div>`;
     const cat = $("#wt-catalog", el), viewer = $("#wt-viewer", el), wv = $("#wt-view", el), title = $("#wt-title", el);
-    const openTool = (sec) => { title.textContent = "darknode.ai/" + sec; cat.hidden = true; viewer.hidden = false; try { wv.loadURL ? wv.loadURL(D + sec) : (wv.src = D + sec); } catch (_) { wv.src = D + sec; } };
+    // `?app=1` = guest deep-link: the site auto-enters its public Test Mode and routes
+    // straight to this tool (without it, a fresh webview hits the marketing landing / login).
+    const toUrl = (sec) => D + sec + "?app=1";
+    const openTool = (sec) => { title.textContent = "darknode.ai/" + sec; cat.hidden = true; viewer.hidden = false; const u = toUrl(sec); try { wv.loadURL ? wv.loadURL(u) : (wv.src = u); } catch (_) { wv.src = u; } };
     $("#wt-grid", el).onclick = (e) => { const b = e.target.closest("[data-sec]"); if (b) openTool(b.dataset.sec); };
     $("#wt-back", el).onclick = () => { viewer.hidden = true; cat.hidden = false; try { wv.loadURL ? wv.loadURL("about:blank") : (wv.src = "about:blank"); } catch (_) {} };
     $("#wt-reload", el).onclick = () => { try { wv.reload(); } catch (_) {} };

@@ -1,6 +1,6 @@
 {
   "name": "darknode-app",
-  "version": "2.44.0",
+  "version": "2.45.0",
   "description": "Darknode — desktop security console (runs tools, a live terminal, and local AI)",
   "main": "main.js",
   "author": "Darknode <contact@darknode.ai>",
