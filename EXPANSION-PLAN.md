@@ -20,6 +20,8 @@ multi-phase program — no filler is ever added to hit a number.
   barrel + harness, 67 tests passing.
 - Phase 2 — DONE (commit "Phase 2: native File Forensics section"): forensics
   IPC + renderer section over real file bytes.
+- Toolkit: added `cvss.js` (v3.0/v3.1 base score calculator, 15 tests) +
+  a live CVSS calculator in the Encode section.
 - Next: Phase 3 (workspaces) — or extend Phase 2 (PCAP summary, cert inspector).
 
 ## Phase 1 — Tested core toolkit (`lib/toolkit/`) + harness  ✓ DONE
