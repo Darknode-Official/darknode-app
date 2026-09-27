@@ -2032,10 +2032,36 @@ const sections = {
       ["Investigations", [["investigation", "Investigation Workspace"], ["secgraph", "Security Graph"], ["casemgmt", "Case Manager"]]],
       ["Infrastructure", [["api", "API"], ["docs", "Docs"], ["education", "Education"], ["downloads", "Darknode OS"], ["dlguide", "Download Guide"], ["privatecloud", "Private Cloud"], ["setup", "Local Setup"]]],
     ];
-    const CATALOG = {};
-    let n = 0;
-    for (const [g, items] of GROUPS) { CATALOG[g] = items.map(([sec, label]) => { n++; return [label, D + sec, ""]; }); }
-    renderDir(el, "Web tools", n + " Darknode tools from darknode.ai — PROMETHEUS, CITADEL, HYDRA and the full catalog across recon, OSINT, forensics, blue team, threat intel and more. Each opens live in your browser.", CATALOG);
+    const n = GROUPS.reduce((a, [, items]) => a + items.length, 0);
+    const gridHtml = GROUPS.map(([g, items]) => `<div class="arse-cat"><div class="cloud-cat">${esc(g)}</div><div class="arse-grid">${items.map(([sec, label]) => `<button class="arse-card" data-sec="${esc(sec)}" data-label="${esc(label)}"><div class="an">${esc(label)} <span class="ax">&#8599;</span></div><div class="au">darknode.ai/${esc(sec)}</div></button>`).join("")}</div></div>`).join("");
+    el.innerHTML = `
+      <div id="wt-catalog">
+        <h1>Web tools</h1>
+        <p class="sub">${n} Darknode tools, embedded live inside the app — PROMETHEUS, CITADEL, HYDRA and the full catalog. Click any tool to open it here.</p>
+        <input class="in" id="wt-search" placeholder="Filter tools…" spellcheck="false" style="max-width:340px;margin-bottom:12px">
+        <div id="wt-grid">${gridHtml}</div>
+      </div>
+      <div id="wt-viewer" hidden style="display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:420px">
+        <div class="run-bar" style="gap:8px;padding:4px 0 8px;align-items:center">
+          <button class="btn ghost sm" id="wt-back">&larr; All tools</button>
+          <span class="mono" id="wt-title" style="flex:1;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <button class="btn ghost sm" id="wt-reload" title="Reload">&#10227;</button>
+          <button class="btn ghost sm" id="wt-ext" title="Open in system browser">&#8599;</button>
+        </div>
+        <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></webview>
+      </div>`;
+    const cat = $("#wt-catalog", el), viewer = $("#wt-viewer", el), wv = $("#wt-view", el), title = $("#wt-title", el);
+    const openTool = (sec) => { title.textContent = "darknode.ai/" + sec; cat.hidden = true; viewer.hidden = false; try { wv.loadURL ? wv.loadURL(D + sec) : (wv.src = D + sec); } catch (_) { wv.src = D + sec; } };
+    $("#wt-grid", el).onclick = (e) => { const b = e.target.closest("[data-sec]"); if (b) openTool(b.dataset.sec); };
+    $("#wt-back", el).onclick = () => { viewer.hidden = true; cat.hidden = false; try { wv.loadURL ? wv.loadURL("about:blank") : (wv.src = "about:blank"); } catch (_) {} };
+    $("#wt-reload", el).onclick = () => { try { wv.reload(); } catch (_) {} };
+    $("#wt-ext", el).onclick = () => { try { S.openExternal(wv.getURL()); } catch (_) {} };
+    const search = $("#wt-search", el);
+    search.oninput = () => {
+      const q = search.value.trim().toLowerCase();
+      el.querySelectorAll(".arse-card").forEach((c) => { const hit = !q || c.dataset.label.toLowerCase().includes(q) || c.dataset.sec.includes(q); c.style.display = hit ? "" : "none"; });
+      el.querySelectorAll(".arse-cat").forEach((g) => { const any = [...g.querySelectorAll(".arse-card")].some((c) => c.style.display !== "none"); g.style.display = any ? "" : "none"; });
+    };
   },
 
   arsenal(el) {
