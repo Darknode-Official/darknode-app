@@ -2007,26 +2007,35 @@ const sections = {
   },
 
   flagship(el) {
-    // The website's flagship dashboards. They are large web apps, so they open
-    // live on darknode.ai in the system browser (opened via openExternal).
+    // The full darknode.ai tool catalog. These are web apps, so each opens live
+    // on darknode.ai in the system browser (via openExternal). Mirrors the
+    // website's Services navigation so the app has the same breadth of tools.
     const D = "https://darknode.ai/";
-    const FLAGSHIP = {
-      "Flagship dashboards": [
-        ["PROMETHEUS", D + "prometheus", "Live threat-intel feed — new CVEs and vulnerabilities as they break."],
-        ["SENTINEL EYE", D + "sentineleye", "A 3D world map of live cyber threats, aircraft, satellites and attacks."],
-        ["HYDRA Engine", D + "hydra", "Automated recon and vulnerability scanning across many targets at once."],
-        ["AEGIS Ops Center", D + "aegis", "Command center for planning and coordinating your security work."],
-        ["VANGUARD", D + "vanguard", "Threat hunting with attack kill-chain visualization."],
-        ["PHANTOM", D + "phantom", "Network traffic analysis — read packet captures and spot anomalies."],
-        ["CITADEL", D + "citadel", "SOC operations — correlate logs, write detection rules, triage alerts."],
-        ["ORACLE", D + "oracle", "Threat-intel platform — manage indicators (IOCs) and track attacker campaigns."],
-        ["SPECTRE", D + "spectre", "Cloud security posture checks for AWS, Azure and GCP."],
-        ["CRUCIBLE", D + "crucible", "Cyber wargaming range — run and score simulated attack-vs-defense exercises."],
-        ["NAVARCH", D + "navarch", "Naval & maritime cyber-defense — fleet integrity and AIS anti-spoofing."],
-        ["Security Dashboard", D + "secdash", "One screen showing your overall security posture at a glance."],
-      ],
-    };
-    renderDir(el, "Flagship tools", "Darknode's flagship dashboards from darknode.ai — PROMETHEUS, SENTINEL EYE, HYDRA, AEGIS and more. Each opens live in your browser.", FLAGSHIP);
+    const GROUPS = [
+      ["Flagship dashboards", [["prometheus", "PROMETHEUS"], ["sentineleye", "SENTINEL EYE"], ["hydra", "HYDRA Engine"], ["aegis", "AEGIS Ops Center"], ["vanguard", "VANGUARD"], ["phantom", "PHANTOM"], ["citadel", "CITADEL"], ["oracle", "ORACLE"], ["spectre", "SPECTRE"], ["crucible", "CRUCIBLE"], ["navarch", "NAVARCH"], ["secdash", "Security Dashboard"]]],
+      ["Offensive Security", [["attacksim", "Threat Simulator"], ["cracklab", "Password Security Lab"], ["exploitdb", "Vulnerability Database"], ["exploitdev", "Security Research Lab"], ["packetcraft", "Packet Crafter"], ["passwordtools", "Password Tools"], ["payloads", "Test Script Forge"], ["payloadgen", "Test Script Generator"], ["pentestconsole", "Security Assessment"], ["privesc", "Privilege Analysis"], ["reverseshell", "Remote Access Testing"]]],
+      ["Security Labs", [["firewall", "Firewall Rules"], ["webshell", "Terminal"], ["wirelesslab", "Wireless Lab"], ["xsslab", "Web Security Lab"], ["socialeng", "Social Engineering"]]],
+      ["Reconnaissance", [["addressintel", "Address Intel"], ["asnexplorer", "ASN Explorer"], ["attacksurf", "Exposure Mapping"], ["dns", "DNS Toolkit"], ["dnsenum", "DNS Enumeration"], ["dnsrecon", "DNS Recon"], ["ghdb", "Google Dorking"], ["netmap", "Network Mapper"], ["reconplanner", "Recon Planner"], ["securityscanner", "Security Scanner"], ["subdomains", "Subdomain Enum"], ["tools", "Scanner Suite"], ["wayback", "Wayback Machine"]]],
+      ["OSINT", [["corstester", "CORS Tester"], ["emailintel", "Email Intel"], ["favicon", "Favicon Hasher"], ["headeranalyzer", "Header Analyzer"], ["httpinspector", "HTTP Inspector"], ["httpprobe", "HTTP Probe"], ["ipgeolocation", "IP Geolocation"], ["iptools", "IP Tools"], ["osint", "OSINT Dashboard"], ["osintemail", "OSINT Email Intel"], ["techfingerprint", "Tech Fingerprint"], ["whoisrecon", "WHOIS Recon"]]],
+      ["Forensics", [["binanalyze", "Binary Analyzer"], ["forensicstoolkit", "Forensics Toolkit"], ["ftimeline", "Forensic Timeline"], ["loganalyze", "Log Analyzer"], ["memforensics", "Memory Forensics"], ["reveng", "Reverse Engineering"], ["stego", "Steganography"], ["timelineviz", "Timeline Visualization"]]],
+      ["Malware Analysis", [["malclass", "Threat Classifier"], ["phishing", "Phishing Analyzer"], ["sandbox", "Threat Analysis Lab"]]],
+      ["Blue Team", [["adversary", "Adversary Emulation"], ["breachsim", "Breach Simulator"], ["containers", "Container Security"], ["deception", "Deception Architect"], ["huntlab", "Threat Hunt Lab"], ["identitymatrix", "Identity Matrix"], ["incidents", "Incident Tracker"], ["mobilesec", "Mobile Security"], ["purpleteam", "Purple Team Ops"], ["riskcalculator", "Risk Calculator"], ["threatmodel", "Threat Modeler"]]],
+      ["Threat Intelligence", [["breachlookup", "Breach Lookup"], ["cvesearch", "CVE Search"], ["cvetimeline", "CVE Timeline"], ["darknetradar", "Darknet Radar"], ["darkwebosint", "Deep Web Intel"], ["ipreputation", "IP Reputation"], ["threat", "Threat Feed"], ["threatdashboard", "Threat Dashboard"], ["threatfeed", "Threat Intel Feed"]]],
+      ["Vulnerability Management", [["vulndb", "Vulnerability DB"], ["vulnprio", "Vuln Prioritizer"], ["vulntriage", "Vuln Triage Engine"], ["secchecklist", "Security Checklist"], ["supplychain", "Supply Chain"]]],
+      ["Network Analysis", [["networkscanner", "Network Scanner"], ["networktools", "Network Tools"], ["networktraffic", "Network Traffic"], ["packetanalyzer", "Packet Analyzer"], ["packetinspector", "Packet Inspector"], ["sslinspector", "SSL Inspector"], ["subnetvisualizer", "Subnet Visualizer"], ["trafficanalyzer", "Traffic Analyzer"], ["websockettester", "WebSocket Tester"]]],
+      ["Security Operations", [["adversaryplaybook", "Adversary Playbook"], ["apifuzzer", "API Fuzzer"], ["apitester", "API Tester"], ["apiscan", "API Scanner"], ["incidentcost", "Incident Cost Calc"], ["incidentresponse", "Incident Response"], ["siemdash", "SIEM Dashboard"]]],
+      ["Compliance & GRC", [["compliance", "Compliance Checker"], ["cyberbriefing", "Cyber Briefing"], ["emailheader", "Email Header Analyzer"], ["fedcompliance", "Federal Compliance"], ["iocextractor", "IOC Extractor"], ["zerotrust", "Zero Trust Planner"]]],
+      ["Crypto & Encoding", [["credaudit", "Credential Auditor"], ["cryptotools", "Crypto Toolkit"], ["cspevaluator", "CSP Evaluator"], ["encoding", "Encoding Suite"], ["hashsuite", "Hash Suite"], ["jwtanalyzer", "JWT Analyzer"], ["regexlab", "Regex Lab"], ["urldissect", "URL Dissector"]]],
+      ["Darknode AI", [["ai", "AI Chat"], ["math", "Quelvra Math"], ["coder", "Nexus Agent"], ["dataviz", "Data Visualization"], ["engines", "Security Engines"], ["report", "Report Generator"]]],
+      ["Training", [["cheats", "Cheat Sheets"], ["cyberrange", "Cyber Range"], ["learn", "Learn Hub"], ["refs", "Reference Library"], ["secquiz", "Skill Assessments"], ["securityquiz", "Security Quiz"], ["snippets", "Snippet Vault"], ["targets", "Practice Targets"], ["training", "Training Labs"], ["utils", "Toolbox"]]],
+      ["Virtual Machines", [["vms", "Vulnerable VMs"], ["vmlab", "VM Lab"]]],
+      ["Investigations", [["investigation", "Investigation Workspace"], ["secgraph", "Security Graph"], ["casemgmt", "Case Manager"]]],
+      ["Infrastructure", [["api", "API"], ["docs", "Docs"], ["education", "Education"], ["downloads", "Darknode OS"], ["dlguide", "Download Guide"], ["privatecloud", "Private Cloud"], ["setup", "Local Setup"]]],
+    ];
+    const CATALOG = {};
+    let n = 0;
+    for (const [g, items] of GROUPS) { CATALOG[g] = items.map(([sec, label]) => { n++; return [label, D + sec, ""]; }); }
+    renderDir(el, "Web tools", n + " Darknode tools from darknode.ai — PROMETHEUS, CITADEL, HYDRA and the full catalog across recon, OSINT, forensics, blue team, threat intel and more. Each opens live in your browser.", CATALOG);
   },
 
   arsenal(el) {
@@ -3748,7 +3757,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["flagship", "Flagship tools (PROMETHEUS, CITADEL...)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
