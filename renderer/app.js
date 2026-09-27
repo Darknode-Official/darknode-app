@@ -1013,23 +1013,130 @@ const sections = {
       if (!okPull) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "Couldn't load <b>" + esc(m.name) + "</b> (Ollama model \"" + esc(tag) + "\"). If you built it locally under a different name, set the exact tag in <b>Settings → Darknode AI</b>, or run <code>ollama pull " + esc(tag) + "</code>."; return false; }
       out.textContent = ""; out.classList.add("dai-live"); return true;
     }
-    async function streamReply(out) {
-      const m = DAI.model();
-      if (m.kind === "local") { if (!(await ensureLocal(m, out))) return; }
-      if (m.claude && !DAI.anthropicKey()) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "<b>Fable</b> needs an Anthropic API key. Add one in <b>Settings → Darknode AI</b>."; return; }
-      const sid = "dai" + (++seq); let acc = "";
-      _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); const shown = stripThink(acc); out.innerHTML = shown ? mdHtml(shown) : (/<think>/i.test(acc) ? '<span class="dai-think">Reasoning…</span>' : ""); if (stick) toBottom(); };
-      let r;
+    // ---- Agentic tool loop: the home chat can take real actions like Claude Code ----
+    // Reuses the same IPC surface the Assistant uses (shell, files, open apps, MCP).
+    const hclip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "\n...[truncated]" : s; };
+    const hshq = (s) => "'" + String(s ?? "").replace(/'/g, "'\\''") + "'";
+    const perm = () => { try { return localStorage.getItem("s_perm") || "auto"; } catch (_) { return "auto"; } };
+    const hcwd = { dir: "" };
+    S.sysinfo().then((s) => { if (!hcwd.dir && s) hcwd.dir = s.home; }).catch(() => {});
+    const HTOOLS = {
+      list_dir: { danger: false, desc: "list files/folders at a path (default: working folder)", params: { properties: { path: {} } },
+        run: async (a) => { const r = await S.fsList(a.path || hcwd.dir); return r.ok ? { path: r.path, items: r.items.map((i) => (i.dir ? "[dir] " : "") + i.name) } : { error: r.error }; } },
+      read_file: { danger: false, desc: "read a text file", params: { properties: { path: {} }, required: ["path"] },
+        run: async (a) => { const r = await S.fsRead(a.path); return r.ok ? { path: r.path, content: hclip(r.data, 20000) } : { error: r.error }; } },
+      write_file: { danger: true, desc: "create or overwrite a text file", params: { properties: { path: {}, content: {} }, required: ["path", "content"] },
+        run: async (a) => { const r = await S.fsWrite(a.path, a.content ?? ""); return r.ok ? { ok: true, wrote: a.path } : { error: r.error }; } },
+      run_command: { danger: true, desc: "run a shell command in the working folder; returns output + exit code", params: { properties: { command: {} }, required: ["command"] },
+        run: async (a) => { const cmd = String((a && (a.command || a.cmd || a.shell || a.script)) || "").trim(); if (!cmd) return { error: "run_command needs a 'command' string" }; const r = await S.agentExec(cmd, hcwd.dir, undefined, DAI_LS("s_auto_pass", "")); return r.ok ? { exit: r.code, killed: r.killed, output: hclip(r.output, 8000) } : { error: r.error }; } },
+      open_app: { danger: true, desc: "launch a desktop app (e.g. firefox, code, gnome-calculator), optional args; runs detached", params: { properties: { app: {}, args: {} }, required: ["app"] },
+        run: async (a) => { const app = String(a.app || "").trim(); if (!app) return { error: "open_app needs an 'app' name" }; const w = await S.which(app.split(/\s+/)[0]); const launch = app + (a.args ? " " + a.args : ""); const r = await S.agentExec("setsid nohup " + launch + " >/dev/null 2>&1 & echo launched pid $!", hcwd.dir, 8000, DAI_LS("s_auto_pass", "")); return r.ok ? { ok: true, launched: launch, found: !!(w && w.found), note: (w && w.found) ? "started" : "not on PATH; install it or use a full path" } : { error: r.error }; } },
+      open_url: { danger: false, desc: "open a URL or local file/folder in the default app", params: { properties: { url: {} }, required: ["url"] },
+        run: async (a) => { const u = String(a.url || "").trim(); if (!u) return { error: "open_url needs a 'url'" }; try { await S.openExternal(/^[a-z]+:\/\//i.test(u) || u.startsWith("mailto:") ? u : "file://" + u); return { ok: true, opened: u }; } catch (e) { return { error: (e && e.message) || "open failed" }; } } },
+      http_request: { danger: false, desc: "make an HTTP request; returns status/headers/body", params: { properties: { method: {}, url: {}, headers: {}, body: {} }, required: ["url"] },
+        run: async (a) => { const r = await S.httpReq({ method: a.method || "GET", url: a.url, headers: a.headers || {}, body: a.body }); return r.ok ? { status: r.status, headers: r.headers, body: hclip(r.body, 8000) } : { error: r.error }; } },
+      search_code: { danger: false, desc: "recursively grep for a pattern under a path", params: { properties: { pattern: {}, path: {} }, required: ["pattern"] },
+        run: async (a) => { const r = await S.agentExec("grep -rIn --exclude-dir=.git --exclude-dir=node_modules -e " + hshq(a.pattern) + " " + hshq(a.path || "."), hcwd.dir); return r.ok ? { matches: hclip(r.output, 8000) } : { error: r.error }; } },
+    };
+    // Pull in tools from any configured MCP servers (namespaced mcp__server__tool), same as the Assistant.
+    let hMcpDone = false;
+    async function ensureHomeMcp() {
+      if (hMcpDone || !S.mcpConnect) return; hMcpDone = true;
+      let cfgs = []; try { cfgs = JSON.parse(localStorage.getItem("s_mcp") || "[]"); } catch (_) {}
+      for (const c of cfgs) {
+        if (!c || !c.name) continue;
+        try {
+          const r = await S.mcpConnect({ name: c.name, transport: c.transport || "stdio", command: c.command, args: c.args || [], env: c.env || {}, url: c.url, headers: c.headers || {}, roots: c.roots || [] });
+          const trust = c.trust || "ask";
+          for (const t of (r && r.tools) || []) {
+            HTOOLS["mcp__" + c.name + "__" + t.name] = { danger: trust === "ask", desc: "[MCP:" + c.name + "] " + (t.description || t.name), params: t.inputSchema || { properties: {} },
+              run: async (a) => { const res = await S.mcpCall(c.name, t.name, a || {}); if (!res || !res.ok) return { error: (res && res.error) || "mcp call failed" }; return res.isError ? { error: hclip(res.content, 8000) } : { output: hclip(res.content, 8000) }; } };
+          }
+        } catch (_) {}
+      }
+    }
+    // Build the agent system prompt: identity + tool protocol + the live tool list.
+    function buildSys() {
+      const list = Object.keys(HTOOLS).map((k) => { const t = HTOOLS[k]; const p = Object.keys((t.params && t.params.properties) || {}).join(", "); return "- " + k + "(" + p + ") — " + t.desc; }).join("\n");
+      return DAI_SYS + "\n\nYou are an agent that takes real actions on this machine to accomplish the user's goal — you do not just describe steps, you perform them, like a hands-on engineer. You have these tools:\n" + list + "\n\nTo use a tool, reply with ONLY a JSON object and nothing else: {\"tool\":\"<name>\",\"args\":{...}}. You then receive the tool's result and may call more tools, one at a time. When the task is finished, reply with your final answer as normal prose (never JSON). Prefer acting over explaining. Read files before editing them. Use absolute paths.";
+    }
+    function addToolCard(name, args) {
+      const row = document.createElement("div"); row.className = "dai-tool";
+      row.innerHTML = `<div class="dai-tool-head"><span class="dai-tool-name">${esc(name)}</span><span class="dai-tool-args">${esc(hclip(JSON.stringify(args || {}), 400))}</span></div><div class="dai-tool-body"></div>`;
+      thread.appendChild(row); toBottom(); return row;
+    }
+    function setToolResult(card, result) {
+      const body = $(".dai-tool-body", card); if (!body) return;
+      const txt = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+      const bad = result && result.error;
+      body.innerHTML = `<pre class="dai-tool-out${bad ? " err" : ""}">${esc(hclip(txt, 3000))}</pre>`; if (atBottom()) toBottom();
+    }
+    function confirmCard(card, name) {
+      return new Promise((resolve) => {
+        const body = $(".dai-tool-body", card);
+        const row = document.createElement("div"); row.className = "dai-tool-confirm";
+        row.innerHTML = `<span>Run <b>${esc(name)}</b>?</span><button class="btn sm" data-ok>Approve</button><button class="btn sm ghost" data-no>Deny</button>`;
+        body.appendChild(row); toBottom();
+        row.querySelector("[data-ok]").onclick = () => { row.remove(); resolve(true); };
+        row.querySelector("[data-no]").onclick = () => { row.remove(); resolve(false); };
+      });
+    }
+    // Extract a {tool,args} call from the model's reply, tolerating fences/prose.
+    function parseToolCall(text) {
+      if (!text) return null;
+      const tryParse = (s) => { try { const o = JSON.parse(s); if (o && typeof o === "object" && typeof o.tool === "string") return o; } catch (_) {} return null; };
+      let t = text.trim();
+      const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i); if (fence) t = fence[1].trim();
+      let o = tryParse(t); if (o) return o;
+      const i = t.indexOf("{"), j = t.lastIndexOf("}");
+      if (i >= 0 && j > i) { o = tryParse(t.slice(i, j + 1)); if (o) return o; }
+      return null;
+    }
+    async function callModel(sid, out) {
+      let acc = "";
+      _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); const shown = stripThink(acc); if (out) out.innerHTML = shown ? mdHtml(shown) : (/<think>/i.test(acc) ? '<span class="dai-think">Reasoning…</span>' : ""); if (stick) toBottom(); };
+      const m = DAI.model(); let r;
       try {
         if (m.kind === "local") r = await S.ollamaStream(sid, { model: m.tag(), messages: history });
         else if (m.claude) r = await S.claudeStream(sid, { model: m.model(), messages: history }, DAI.anthropicKey());
         else r = await S.daiStream(sid, history);
       } catch (e) { r = { ok: false, error: (e && e.message) || "stream error" }; }
-      _ollamaTokenCb = null; out.classList.remove("dai-live");
-      if (!r || !r.ok) { out.classList.add("dai-err"); out.textContent = (r && r.error) || "Darknode AI is unavailable right now."; return; }
-      const reply = stripThink((r.message && r.message.content) || acc) || "(no reply)";
-      history.push({ role: "assistant", content: reply });
-      out.innerHTML = mdHtml(reply); if (atBottom()) toBottom();
+      _ollamaTokenCb = null;
+      if (!r || !r.ok) return { ok: false, error: (r && r.error) || "Darknode AI is unavailable right now." };
+      return { ok: true, content: stripThink((r.message && r.message.content) || acc) || "" };
+    }
+    const MAX_STEPS = 20;
+    async function runTurn() {
+      const m0 = DAI.model();
+      let out = addAI();
+      if (m0.kind === "local") { if (!(await ensureLocal(m0, out))) return; }
+      if (m0.claude && !DAI.anthropicKey()) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "<b>Fable</b> needs an Anthropic API key. Add one in <b>Settings → Darknode AI</b>."; return; }
+      await ensureHomeMcp();
+      history[0] = { role: "system", content: buildSys() };
+      for (let step = 0; step < MAX_STEPS; step++) {
+        const sid = "dai" + (++seq);
+        const res = await callModel(sid, out);
+        out.classList.remove("dai-live");
+        if (!res.ok) { out.classList.add("dai-err"); out.textContent = res.error; return; }
+        const call = parseToolCall(res.content);
+        if (!call || !HTOOLS[call.tool]) {
+          const reply = res.content || "(no reply)";
+          history.push({ role: "assistant", content: reply });
+          out.innerHTML = mdHtml(reply); if (atBottom()) toBottom();
+          return;
+        }
+        history.push({ role: "assistant", content: res.content });
+        out.remove();
+        const tool = HTOOLS[call.tool];
+        const card = addToolCard(call.tool, call.args);
+        let result;
+        if (tool.danger && perm() === "ask" && !(await confirmCard(card, call.tool))) result = { error: "denied by user" };
+        else { try { result = await tool.run(call.args || {}); } catch (e) { result = { error: (e && e.message) || "tool error" }; } }
+        setToolResult(card, result);
+        history.push({ role: "user", content: "Tool result for " + call.tool + ":\n" + hclip(JSON.stringify(result), 8000) });
+        out = addAI();
+      }
+      out.classList.remove("dai-live"); out.classList.add("dai-err"); out.textContent = "Stopped after " + MAX_STEPS + " tool steps. Ask me to continue if needed.";
     }
     async function send(text) {
       text = (text != null ? text : input.value).trim();
@@ -1039,8 +1146,7 @@ const sections = {
       input.value = ""; grow();
       history.push({ role: "user", content: text });
       addUser(text);
-      const out = addAI();
-      await streamReply(out);
+      await runTurn();
       busy = false; sendBtn.disabled = false; input.focus();
     }
     sendBtn.onclick = () => send();
@@ -2564,6 +2670,12 @@ const sections = {
       run_command: { danger: true, desc: "Run a shell command in the working folder and return its output and exit code. Use this to ACTUALLY run tools (nmap, msfconsole -q -x '...', curl, python3 - <<EOF, etc.) - do not just describe them.",
         params: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
         run: async (a) => { const cmd = String((a && (a.command || a.cmd || a.command_line || a.shell || a.script || a.input)) || "").trim(); if (!cmd) return { error: "run_command requires a non-empty 'command' string, e.g. {\"command\":\"nmap -sV 192.168.56.102\"}" }; const r = await S.agentExec(cmd, cwd.dir, undefined, lsGet("s_auto_pass", "")); return r.ok ? { exit: r.code, killed: r.killed, output: r.output } : { error: r.error }; } },
+      open_app: { danger: true, desc: "Launch a desktop application on this machine, optionally with arguments. Give the app's command/binary name (e.g. 'firefox', 'code', 'gnome-calculator', 'wireshark'). Runs detached so it keeps running after this step.",
+        params: { type: "object", properties: { app: { type: "string", description: "app command or binary name" }, args: { type: "string", description: "optional arguments" } }, required: ["app"] },
+        run: async (a) => { const app = String(a.app || "").trim(); if (!app) return { error: "open_app requires an 'app' name" }; const w = await S.which(app.split(/\s+/)[0]); const launch = app + (a.args ? " " + a.args : ""); const r = await S.agentExec("setsid nohup " + launch + " >/dev/null 2>&1 & echo launched pid $!", cwd.dir, 8000, lsGet("s_auto_pass", "")); return r.ok ? { ok: true, launched: launch, found: !!(w && w.found), note: (w && w.found) ? "started detached" : "command not found on PATH; if it did not open, install it or use its full path" } : { error: r.error }; } },
+      open_url: { danger: false, desc: "Open a URL or a local file/folder in the system's default application (browser, file manager, PDF viewer, etc.).",
+        params: { type: "object", properties: { url: { type: "string", description: "http(s):// URL, or an absolute file/folder path" } }, required: ["url"] },
+        run: async (a) => { const u = String(a.url || "").trim(); if (!u) return { error: "open_url requires a 'url'" }; try { await S.openExternal(/^[a-z]+:\/\//i.test(u) || u.startsWith("mailto:") ? u : "file://" + u); return { ok: true, opened: u }; } catch (e) { return { error: (e && e.message) || "open failed" }; } } },
       http_request: { danger: false, desc: "Make an HTTP request. Returns status, headers, and body.",
         params: { type: "object", properties: { method: { type: "string" }, url: { type: "string" }, headers: { type: "object" }, body: { type: "string" } }, required: ["url"] },
         run: async (a) => { const r = await S.httpReq({ method: a.method || "GET", url: a.url, headers: a.headers || {}, body: a.body }); return r.ok ? { status: r.status, headers: r.headers, body: clip(r.body, 8000) } : { error: r.error }; } },
