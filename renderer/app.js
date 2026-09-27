@@ -290,7 +290,14 @@ function applyPreset(acc, acc2) { document.documentElement.style.setProperty("--
 function applyTheme(m) { document.documentElement.setAttribute("data-theme", m); try { localStorage.setItem("s_theme", m); } catch (_) {} }
 // Visual skin: "graphite" = calm neutral-grey console (default), "classic" = original cyber look.
 function applySkin(s) { if (s && s !== "classic") document.documentElement.setAttribute("data-skin", s); else document.documentElement.removeAttribute("data-skin"); try { localStorage.setItem("s_skin", s); } catch (_) {} }
-try { const a = localStorage.getItem("s_accent"); if (a) applyAccent(a); const a2 = localStorage.getItem("s_accent2"); if (a2) document.documentElement.style.setProperty("--acc-2", a2); applyTheme(localStorage.getItem("s_theme") || "light"); applySkin(localStorage.getItem("s_skin") || "graphite"); } catch (_) {}
+try {
+  // One-time reset: older builds booted a dark theme and persisted "dark" to
+  // localStorage, so the new ChatGPT-white default was overridden on every
+  // section except the force-white AI chat. Clear the stale preference once;
+  // the theme toggle in Settings still works and persists after this.
+  if (!localStorage.getItem("s_ct_reset")) { localStorage.setItem("s_theme", "light"); localStorage.setItem("s_skin", "graphite"); localStorage.setItem("s_ct_reset", "1"); }
+  const a = localStorage.getItem("s_accent"); if (a) applyAccent(a); const a2 = localStorage.getItem("s_accent2"); if (a2) document.documentElement.style.setProperty("--acc-2", a2); applyTheme(localStorage.getItem("s_theme") || "light"); applySkin(localStorage.getItem("s_skin") || "graphite");
+} catch (_) {}
 
 // ---- catalogs ----
 // {target} is substituted with the target-bar value at run time.
