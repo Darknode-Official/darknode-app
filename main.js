@@ -332,7 +332,10 @@ ipcMain.handle("ollama", (_e, { path: pth, body }) => new Promise((res) => {
 // assembled message (content + tool_calls) when the stream ends.
 const streamReqs = new Map();
 ipcMain.handle("ollama:stream", (_e, { id, body }) => new Promise((resolve) => {
-  const data = JSON.stringify(Object.assign({}, body, { stream: true }));
+  // keep_alive: keep the model resident for 30m so agentic multi-step turns don't
+  // pay a cold ~8s reload each step (the main cause of the "glitchy/hung" feel).
+  // Caller can still override by setting keep_alive on the body.
+  const data = JSON.stringify(Object.assign({ keep_alive: "30m" }, body, { stream: true }));
   let content = "", toolCalls = null, settled = false;
   const done = (v) => { if (settled) return; settled = true; streamReqs.delete(id); resolve(v); };
   const req = http.request(
