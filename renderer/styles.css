@@ -1417,3 +1417,33 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 :root[data-skin="graphite"] #page.dai-mode ~ .apphead{display:none}
 :root[data-skin="graphite"] body:has(#page.dai-mode) .apphead{display:none}
 :root[data-skin="graphite"] body:has(#page.dai-mode) #crumbs{display:none}
+
+/* ============================================================
+   ChatGPT flatten — make EVERY section (not just chat) read as
+   clean ChatGPT: flat surfaces, no accent rails / ambient gradients.
+   Scoped to the graphite skin (the default). Semantic ok/bad colors
+   and the code/terminal panels are intentionally left as-is.
+   ============================================================ */
+:root[data-skin="graphite"] .card,
+:root[data-skin="graphite"] .dash-hero,
+:root[data-skin="graphite"] .stat,
+:root[data-skin="graphite"] .qa{background:var(--card);background-image:none!important;box-shadow:none}
+:root[data-skin="graphite"] .dash-hero{border:1px solid var(--line)}
+:root[data-skin="graphite"] .stat::after,
+:root[data-skin="graphite"] .stat::before{display:none!important}   /* no accent rail */
+:root[data-skin="graphite"] .qa::before{display:none!important}     /* no gradient hover ring */
+:root[data-skin="graphite"] .qa:hover{transform:none;border-color:var(--line-2);box-shadow:none;background:color-mix(in srgb,var(--txt) 4%,var(--card))}
+:root[data-skin="graphite"] .dh-eyebrow,
+:root[data-skin="graphite"] .lbl{color:var(--mut)}
+:root[data-skin="graphite"] .brand-tag{color:var(--mut);border-color:var(--line-2);background:transparent}
+:root[data-skin="graphite"] .target-lbl{color:var(--mut)}
+/* Inputs/selects: flat ChatGPT fields */
+:root[data-skin="graphite"] .in,
+:root[data-skin="graphite"] .f,
+:root[data-skin="graphite"] input,
+:root[data-skin="graphite"] textarea,
+:root[data-skin="graphite"] select{background:var(--card);border:1px solid var(--line);box-shadow:none}
+:root[data-skin="graphite"] .in:focus,
+:root[data-skin="graphite"] .f:focus{border-color:var(--line-2);box-shadow:none}
+/* Ghost buttons: quiet grey hover like ChatGPT secondary buttons */
+:root[data-skin="graphite"] .btn.ghost:hover{background:color-mix(in srgb,var(--txt) 6%,transparent);border-color:var(--line-2);color:var(--txt)}
