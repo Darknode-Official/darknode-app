@@ -2368,7 +2368,64 @@ const sections = {
         <div class="run-status" id="estat" style="margin-top:8px"></div>
         <div class="run-bar"><pre class="out" id="eout" style="flex:1;min-height:5em">output</pre></div>
         <button class="btn ghost sm" id="ecopy">copy output</button>
+      </div>
+      <div class="card" id="cvss-card" style="max-width:820px">
+        <div class="lbl">CVSS v3.1 calculator</div>
+        <p class="muted" style="margin:0 0 12px;font-size:.82rem">Score a vulnerability from its base metrics, or paste a vector to decode it. Everything is computed locally.</p>
+        <div id="cvss-metrics" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"></div>
+        <div class="run-bar" style="margin-top:14px;align-items:center;gap:14px">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span id="cvss-score" style="font-size:2rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1">0.0</span>
+            <span id="cvss-sev" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:3px 9px;border-radius:20px">None</span>
+          </div>
+          <code id="cvss-vector" class="mono" style="flex:1;min-width:0;font-size:.78rem;color:var(--txt-2);overflow-x:auto;white-space:nowrap"></code>
+          <button class="btn ghost sm" id="cvss-copy">copy vector</button>
+        </div>
+        <label class="pb-f" style="margin-top:12px"><span>Paste a vector to load it</span><input class="in mono" id="cvss-in" spellcheck="false" placeholder="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"></label>
+        <div class="run-status" id="cvss-stat" style="margin-top:6px"></div>
       </div>`;
+    // CVSS calculator — pure logic from window.DarknodeToolkit.cvss (lib/toolkit/cvss.js).
+    (() => {
+      const CV = (typeof window !== "undefined" && window.DarknodeToolkit) || {};
+      const card = $("#cvss-card", el); if (!card || !CV.score) { if (card) card.hidden = true; return; }
+      const METRICS = [
+        ["AV", "Attack Vector", [["N", "Network"], ["A", "Adjacent"], ["L", "Local"], ["P", "Physical"]]],
+        ["AC", "Attack Complexity", [["L", "Low"], ["H", "High"]]],
+        ["PR", "Privileges Req.", [["N", "None"], ["L", "Low"], ["H", "High"]]],
+        ["UI", "User Interaction", [["N", "None"], ["R", "Required"]]],
+        ["S", "Scope", [["U", "Unchanged"], ["C", "Changed"]]],
+        ["C", "Confidentiality", [["H", "High"], ["L", "Low"], ["N", "None"]]],
+        ["I", "Integrity", [["H", "High"], ["L", "Low"], ["N", "None"]]],
+        ["A", "Availability", [["H", "High"], ["L", "Low"], ["N", "None"]]],
+      ];
+      const sel = { AV: "N", AC: "L", PR: "N", UI: "N", S: "U", C: "H", I: "H", A: "H" };
+      const SEV_COLOR = { Critical: "var(--bad)", High: "var(--warn)", Medium: "#eab308", Low: "var(--ok)", None: "var(--mut)" };
+      $("#cvss-metrics", el).innerHTML = METRICS.map(([k, label, opts]) =>
+        `<label class="pb-f"><span>${esc(label)}</span><select class="f" data-m="${k}">${opts.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select></label>`).join("");
+      const scoreEl = $("#cvss-score", el), sevEl = $("#cvss-sev", el), vecEl = $("#cvss-vector", el), stat = $("#cvss-stat", el);
+      function refresh() {
+        card.querySelectorAll("select[data-m]").forEach((s) => { s.value = sel[s.dataset.m]; });
+        const r = CV.score({ version: "3.1", metrics: { ...sel } });
+        scoreEl.textContent = r.baseScore.toFixed(1);
+        scoreEl.style.color = SEV_COLOR[r.severity];
+        sevEl.textContent = r.severity;
+        sevEl.style.color = SEV_COLOR[r.severity];
+        sevEl.style.background = "color-mix(in srgb," + SEV_COLOR[r.severity] + " 16%,transparent)";
+        vecEl.textContent = r.vector;
+      }
+      $("#cvss-metrics", el).onchange = (e) => { const s = e.target.closest("select[data-m]"); if (!s) return; sel[s.dataset.m] = s.value; refresh(); };
+      $("#cvss-copy", el).onclick = (e) => { navigator.clipboard?.writeText(vecEl.textContent); e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy vector"), 1200); };
+      $("#cvss-in", el).oninput = (e) => {
+        const v = e.target.value.trim(); if (!v) { stat.textContent = ""; return; }
+        try {
+          const p = CV.parseVector(v);
+          Object.assign(sel, p.metrics); refresh();
+          const r = CV.score(p);
+          stat.className = "run-status ok"; stat.textContent = "loaded " + r.severity + " " + r.baseScore.toFixed(1);
+        } catch (err) { stat.className = "run-status bad"; stat.textContent = err.message; }
+      };
+      refresh();
+    })();
     const ops = [
       ["Base64 encode", (s) => btoa(unescape(encodeURIComponent(s)))],
       ["Base64 decode", (s) => decodeURIComponent(escape(atob(s.trim())))],
