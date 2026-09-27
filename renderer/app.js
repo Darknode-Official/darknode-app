@@ -2032,6 +2032,10 @@ const sections = {
       ["Investigations", [["investigation", "Investigation Workspace"], ["secgraph", "Security Graph"], ["casemgmt", "Case Manager"]]],
       ["Infrastructure", [["api", "API"], ["docs", "Docs"], ["education", "Education"], ["downloads", "Darknode OS"], ["dlguide", "Download Guide"], ["privatecloud", "Private Cloud"], ["setup", "Local Setup"]]],
     ];
+    // Append the 843 Toolbox "mini-tools" (from webtools-catalog.js) so the app grid
+    // mirrors the site's full ~1,000-tool catalog, not just the platforms. Each opens
+    // via the same ?app=1 guest deep-link.
+    if (Array.isArray(window.WT_MINI)) GROUPS.push(...window.WT_MINI);
     const n = GROUPS.reduce((a, [, items]) => a + items.length, 0);
     const gridHtml = GROUPS.map(([g, items]) => `<div class="arse-cat"><div class="cloud-cat">${esc(g)}</div><div class="arse-grid">${items.map(([sec, label]) => `<button class="arse-card" data-sec="${esc(sec)}" data-label="${esc(label)}"><div class="an">${esc(label)} <span class="ax">&#8599;</span></div><div class="au">darknode.ai/${esc(sec)}</div></button>`).join("")}</div></div>`).join("");
     el.innerHTML = `
