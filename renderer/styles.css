@@ -1346,17 +1346,24 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
    Darknode's own name/logo. App only.
    ============================================================ */
 :root[data-skin="graphite"]{
-  --bg:#212121; --bg-2:#171717;
+  --bg:#212121; --bg-2:#171717; --bg2:#181818;
   --card:#2f2f2f; --card2:#303030; --surface-3:#373737;
   --line:#2f2f2f; --line-2:#4d4d4d;
-  --txt:#ececec; --txt-2:#b4b4b4; --mut:#8e8e8e;
+  --txt:#ececec; --txt-2:#b4b4b4; --mut:#8e8e8e; --dim:#8e8e8e;
 }
 :root[data-skin="graphite"][data-theme="light"]{
-  --bg:#ffffff; --bg-2:#f9f9f9;
+  --bg:#ffffff; --bg-2:#f9f9f9; --bg2:#f4f4f4;
   --card:#f9f9f9; --card2:#f4f4f4; --surface-3:#ececec;
   --line:#e5e5e5; --line-2:#d9d9d9;
-  --txt:#0d0d0d; --txt-2:#5d5d5d; --mut:#8f8f8f;
+  --txt:#0d0d0d; --txt-2:#5d5d5d; --mut:#8f8f8f; --dim:#8f8f8f;
+  /* Bright neon status colors are unreadable on white — use accessible tones in
+     light mode (they double as translucent tints, which stay subtle). */
+  --ok:#059669; --warn:#b45309; --bad:#dc2626;
 }
+/* .dim is used as a class in several sections but never had a color rule, so it
+   inherited --txt; on the API section's dark-fallback header rows that produced
+   dark-on-dark text in light mode. Give it the muted colour explicitly. */
+:root[data-skin="graphite"] .dim{color:var(--mut)}
 :root[data-skin="graphite"] .sidebar{background:#171717}
 :root[data-skin="graphite"][data-theme="light"] .sidebar{background:#f9f9f9}
 
