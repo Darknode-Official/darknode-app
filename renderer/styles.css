@@ -46,8 +46,7 @@
 html,body{height:100%;margin:0}
 body{
   background:var(--bg);color:var(--txt);
-  font-family:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  font-feature-settings:"cv02","cv03","cv04","ss01";
+  font-family:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji";
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   font-size:14px;line-height:1.5;
 }
@@ -1026,28 +1025,36 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
    overrides --acc. Everything here is scoped to the skin.
    ============================================================ */
 :root[data-skin="graphite"]{
-  --acc:#33d6a6;              /* Darknode graphite signature (mint-teal) */
-  --acc-2:#4bb8ff;
-  --bg:#1c1c1c;              /* main conversation surface */
-  --bg-2:#161616;
-  --card:#242424;
-  --card2:#2c2c2c;
-  --surface-3:#363636;
-  --line:#383838;
-  --line-2:#4a4a4a;
+  /* ChatGPT dark (matches the ChatGPT app: #212121 canvas, #171717 sidebar) */
+  --acc:#ececec;
+  --acc-2:#c4c4c4;
+  --cta:#ececec;             /* primary button / send: light chip on dark */
+  --cta-tx:#0d0d0d;
+  --bg:#212121;              /* main conversation surface */
+  --bg-2:#171717;
+  --card:#2f2f2f;
+  --card2:#2f2f2f;
+  --surface-3:#3a3a3a;
+  --line:#3d3d3d;
+  --line-2:#4d4d4d;
   --txt:#ececec;
-  --txt-2:#c4c4c4;
-  --mut:#8f8f8f;
+  --txt-2:#c5c5d2;
+  --mut:#8e8ea0;
   --sh-1:0 1px 2px rgba(0,0,0,.3);
   --sh-2:0 10px 30px -14px rgba(0,0,0,.65);
   --sh-pop:0 30px 80px -20px rgba(0,0,0,.8);
   --r-sm:8px;--r:12px;--r-lg:16px;--r-xl:24px;
 }
 :root[data-skin="graphite"][data-theme="light"]{
-  --bg:#ffffff;--bg-2:#f7f7f8;
-  --card:#f7f7f8;--card2:#ececee;--surface-3:#e2e2e5;
-  --line:#e6e6e8;--line-2:#d2d2d6;
-  --txt:#1e1e1e;--txt-2:#40414f;--mut:#6e6e80;
+  /* ChatGPT light (white canvas, #f9f9f9 sidebar, near-black text) */
+  --acc:#0d0d0d;
+  --acc-2:#0d0d0d;
+  --cta:#0d0d0d;             /* primary button / send: black on light */
+  --cta-tx:#ffffff;
+  --bg:#ffffff;--bg-2:#f9f9f9;
+  --card:#f9f9f9;--card2:#ececec;--surface-3:#e3e3e3;
+  --line:#e5e5e5;--line-2:#d9d9d9;
+  --txt:#0d0d0d;--txt-2:#4d4d4d;--mut:#8f8f8f;
   --sh-1:0 1px 2px rgba(20,20,30,.06);
   --sh-2:0 10px 30px -14px rgba(20,20,30,.18);
 }
@@ -1072,7 +1079,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 :root[data-skin="graphite"] .nav-item.active{
   background:color-mix(in srgb,var(--txt) 11%,transparent);color:var(--txt);font-weight:600;
 }
-:root[data-skin="graphite"] .nav-item.active .ni{color:var(--acc);opacity:1}
+:root[data-skin="graphite"] .nav-item.active .ni{color:currentColor;opacity:1}
 :root[data-skin="graphite"] .nav-item.active::before{display:none}   /* no left accent rail */
 
 /* Header: flat, quiet */
@@ -1088,10 +1095,10 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 
 /* Buttons: flat solid accent, no sheen/glow */
 :root[data-skin="graphite"] .btn{
-  background:var(--acc);color:#04140f;box-shadow:none;border-radius:10px;font-weight:600;
+  background:var(--cta);color:var(--cta-tx);box-shadow:none;border-radius:10px;font-weight:600;
 }
 :root[data-skin="graphite"] .btn::after{display:none!important;animation:none!important}
-:root[data-skin="graphite"] .btn:hover{filter:brightness(1.06);box-shadow:none}
+:root[data-skin="graphite"] .btn:hover{filter:none;opacity:.88;box-shadow:none}
 :root[data-skin="graphite"] .btn.ghost{background:transparent;color:var(--txt);border:1px solid var(--line-2)}
 :root[data-skin="graphite"] .btn.ghost:hover{background:color-mix(in srgb,var(--txt) 8%,transparent);box-shadow:none}
 :root[data-skin="graphite"] .btn.danger{background:var(--bad);color:#fff}
@@ -1136,7 +1143,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 
 /* Segmented controls + inputs: neutral */
 :root[data-skin="graphite"] .seg{background:var(--card2);border-color:var(--line)}
-:root[data-skin="graphite"] .seg button.on{background:var(--acc);color:#04140f}
+:root[data-skin="graphite"] .seg button.on{background:var(--cta);color:var(--cta-tx)}
 :root[data-skin="graphite"] .chip{background:color-mix(in srgb,var(--txt) 7%,transparent);border-color:var(--line-2);color:var(--txt-2)}
 
 /* Thinner, neutral scrollbars */
