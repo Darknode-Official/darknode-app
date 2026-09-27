@@ -1331,3 +1331,82 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .dai .dai-tool-head{color:#0d0d0d !important}
 .dai .dai-tool-head:hover{background:#efeff1 !important}
 .dai .dai-txt .code-block, .dai .dai-txt pre{background:#0d0d0d !important}
+
+/* ============================================================
+   ChatGPT-exact tuning for the Graphite skin
+   Matches the real product's greys, sidebar, chat column and
+   composer as closely as a from-scratch build can, while keeping
+   Darknode's own name/logo. App only.
+   ============================================================ */
+:root[data-skin="graphite"]{
+  --bg:#212121; --bg-2:#171717;
+  --card:#2f2f2f; --card2:#303030; --surface-3:#373737;
+  --line:#2f2f2f; --line-2:#4d4d4d;
+  --txt:#ececec; --txt-2:#b4b4b4; --mut:#8e8e8e;
+}
+:root[data-skin="graphite"][data-theme="light"]{
+  --bg:#ffffff; --bg-2:#f9f9f9;
+  --card:#f9f9f9; --card2:#f4f4f4; --surface-3:#ececec;
+  --line:#e5e5e5; --line-2:#d9d9d9;
+  --txt:#0d0d0d; --txt-2:#5d5d5d; --mut:#8f8f8f;
+}
+:root[data-skin="graphite"] .sidebar{background:#171717}
+:root[data-skin="graphite"][data-theme="light"] .sidebar{background:#f9f9f9}
+
+/* Sidebar items: ChatGPT's flat rounded rows, hover = subtle grey, no accent */
+:root[data-skin="graphite"] .nav-item{border-radius:8px;color:var(--txt)}
+:root[data-skin="graphite"] .nav-item .ni{opacity:.9}
+:root[data-skin="graphite"] .nav-item:hover{background:#2f2f2f}
+:root[data-skin="graphite"][data-theme="light"] .nav-item:hover{background:#ececec}
+:root[data-skin="graphite"] .nav-item.active{background:#2f2f2f;color:var(--txt);font-weight:500}
+:root[data-skin="graphite"][data-theme="light"] .nav-item.active{background:#e8e8e8}
+:root[data-skin="graphite"] .nav-item.active .ni{color:var(--txt)}
+:root[data-skin="graphite"] .brand-tag{display:none}
+
+/* Home chat = ChatGPT exact: bg #212121, #303030 user bubble, borderless AI */
+:root[data-skin="graphite"] #page.dai-mode,
+:root[data-skin="graphite"] .dai{background:var(--bg)}
+:root[data-skin="graphite"] .dai-top{border-bottom:none}
+:root[data-skin="graphite"] .dai-dot{display:none}
+:root[data-skin="graphite"] .dai-brand{font-size:1rem}
+:root[data-skin="graphite"] .dai-msg.user .dai-txt{background:var(--card2);color:var(--txt);font-weight:400;border-radius:22px;padding:10px 18px}
+:root[data-skin="graphite"][data-theme="light"] .dai-msg.user .dai-txt{background:#f4f4f4;color:#0d0d0d}
+:root[data-skin="graphite"] .dai-greet{font-size:1.75rem;font-weight:600}
+
+/* Composer: ChatGPT's rounded #303030 pill with a circular send button */
+:root[data-skin="graphite"] .dai-composer{
+  background:var(--card2);border:1px solid transparent;border-radius:26px;
+  padding:9px 9px 9px 20px;box-shadow:none;
+}
+:root[data-skin="graphite"][data-theme="light"] .dai-composer{background:#f4f4f4;border-color:#e5e5e5}
+:root[data-skin="graphite"] .dai-composer:focus-within{border-color:var(--line-2);box-shadow:none}
+:root[data-skin="graphite"] .dai-composer textarea{font-size:1rem}
+:root[data-skin="graphite"] .dai-send{
+  width:36px;height:36px;border-radius:50%;background:#ffffff;color:#0d0d0d;
+}
+:root[data-skin="graphite"] .dai-send:hover{background:#e6e6e6;filter:none;opacity:1}
+:root[data-skin="graphite"] .dai-send:disabled{background:#676767;color:#2f2f2f;opacity:1}
+:root[data-skin="graphite"][data-theme="light"] .dai-send{background:#0d0d0d;color:#ffffff}
+:root[data-skin="graphite"][data-theme="light"] .dai-send:hover{background:#2f2f2f}
+:root[data-skin="graphite"][data-theme="light"] .dai-send:disabled{background:#e0e0e0;color:#a0a0a0}
+
+/* Suggestion cards + footer: quiet, monochrome */
+:root[data-skin="graphite"] .dai-chip{background:transparent;border:1px solid var(--line-2);border-radius:14px}
+:root[data-skin="graphite"] .dai-chip:hover{background:#2f2f2f;border-color:var(--line-2)}
+:root[data-skin="graphite"][data-theme="light"] .dai-chip:hover{background:#f4f4f4}
+:root[data-skin="graphite"] .dai-model,
+:root[data-skin="graphite"] .dai-pick select,
+:root[data-skin="graphite"] .dai-new{border-color:var(--line-2);color:var(--txt-2)}
+:root[data-skin="graphite"] .dai-new:hover{background:#2f2f2f;color:var(--txt)}
+
+/* Top bar / header: match the flat #212121 canvas */
+:root[data-skin="graphite"] .apphead{background:var(--bg);border-bottom:1px solid var(--line)}
+
+/* ChatGPT-exact: no colored focus glow, and an edge-to-edge chat (hide the
+   app's global target/search bar while on the Darknode AI home). */
+:root[data-skin="graphite"]{ --ring:rgba(255,255,255,.14); --acc-soft:rgba(255,255,255,.08); }
+:root[data-skin="graphite"][data-theme="light"]{ --ring:rgba(0,0,0,.12); --acc-soft:rgba(0,0,0,.05); }
+:root[data-skin="graphite"] .dai-composer textarea:focus{outline:none;box-shadow:none}
+:root[data-skin="graphite"] #page.dai-mode ~ .apphead{display:none}
+:root[data-skin="graphite"] body:has(#page.dai-mode) .apphead{display:none}
+:root[data-skin="graphite"] body:has(#page.dai-mode) #crumbs{display:none}
