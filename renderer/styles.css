@@ -1282,3 +1282,4 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 :root[data-skin="graphite"] .dai-greet{font-weight:700}
 :root[data-skin="graphite"] .dai-chip{border-radius:14px}
 :root[data-skin="graphite"][data-theme="dark"] .dai-txt .code-block{background:#101010;border-radius:12px}
+.dai-think{color:var(--txt-2);font-style:italic;opacity:.8}

@@ -136,6 +136,18 @@ const DAI = {
   anthropicKey: () => DAI_LS("s_anthropic_key", ""),
   cancel: (id) => { try { S.daiCancel(id); } catch (_) {} try { S.ollamaCancel(id); } catch (_) {} try { S.claudeCancel(id); } catch (_) {} },
 };
+// Reasoning models (e.g. the local Darknode models) emit a private <think>…</think>
+// block before the answer; that reasoning can leak the base identity, so we never
+// show or store it — only the final answer. Handles the mid-stream states too:
+// a closed block is dropped, and an as-yet-unclosed block hides everything from it on.
+function stripThink(s) {
+  if (!s) return s;
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");            // complete blocks anywhere
+  const close = s.search(/<\/think>/i);                        // stray closer, opener eaten by template
+  if (close !== -1 && !/<think>/i.test(s.slice(0, close))) s = s.slice(close).replace(/<\/think>/i, "");
+  s = s.replace(/<think>[\s\S]*$/i, "");                       // still-open block while streaming
+  return s.replace(/^\s+/, "");
+}
 // Best-effort chargeback logging for one Assistant turn (operator/team resolved in main).
 async function logUsage(fields) { try { const id = await S.govIdentity(); await S.govUsageAppend(Object.assign({ ts: new Date().toISOString(), operator: id && id.operator, team: id && id.team }, fields)); } catch (_) {} }
 // Rough USD cost estimate for a Claude turn (per-Mtok in/out); local = free.
@@ -1006,7 +1018,7 @@ const sections = {
       if (m.kind === "local") { if (!(await ensureLocal(m, out))) return; }
       if (m.claude && !DAI.anthropicKey()) { out.classList.remove("dai-live"); out.classList.add("dai-err"); out.innerHTML = "<b>Fable</b> needs an Anthropic API key. Add one in <b>Settings → Darknode AI</b>."; return; }
       const sid = "dai" + (++seq); let acc = "";
-      _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); out.innerHTML = mdHtml(acc); if (stick) toBottom(); };
+      _ollamaTokenCb = (d) => { if (!d || d.id !== sid) return; acc += d.chunk; const stick = atBottom(); const shown = stripThink(acc); out.innerHTML = shown ? mdHtml(shown) : (/<think>/i.test(acc) ? '<span class="dai-think">Reasoning…</span>' : ""); if (stick) toBottom(); };
       let r;
       try {
         if (m.kind === "local") r = await S.ollamaStream(sid, { model: m.tag(), messages: history });
@@ -1015,7 +1027,7 @@ const sections = {
       } catch (e) { r = { ok: false, error: (e && e.message) || "stream error" }; }
       _ollamaTokenCb = null; out.classList.remove("dai-live");
       if (!r || !r.ok) { out.classList.add("dai-err"); out.textContent = (r && r.error) || "Darknode AI is unavailable right now."; return; }
-      const reply = (r.message && r.message.content) || acc || "(no reply)";
+      const reply = stripThink((r.message && r.message.content) || acc) || "(no reply)";
       history.push({ role: "assistant", content: reply });
       out.innerHTML = mdHtml(reply); if (atBottom()) toBottom();
     }
