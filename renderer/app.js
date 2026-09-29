@@ -3501,7 +3501,7 @@ const sections = {
     $("#aggoal", el).onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
   },
 
-  async ai(el) { return this.agent(el); /* unified: Local AI folded into the autonomous Assistant */
+  async ai(el) { return sections.agent(el); /* unified: Local AI folded into the autonomous Assistant */
     el.innerHTML = `
       <h1>Local AI</h1>
       <p class="sub">Unrestricted chat with your local Ollama models &mdash; private, built for security research and coding. With <b>Autonomous</b> on, it runs the commands it produces and works from their output until the task is done.</p>
@@ -3809,8 +3809,8 @@ darknode api stop</code></pre>
       const msg = $("#apiStartMsg", el);
       if (msg) msg.textContent = "Starting...";
       try {
-        await S.exec("darknode", ["api", "start", "--port", "8080"]);
-        if (msg) msg.textContent = "API server running on port 8080";
+        const r = await S.agentExec("darknode api start --port 8080");
+        if (msg) msg.textContent = (r && r.ok) ? "API server running on port 8080" : ("Error: " + ((r && r.error) || "failed to start"));
       } catch (e) { if (msg) msg.textContent = "Error: " + (e.message || e); }
     };
     const webBtn = $("#apiWebBtn", el);
