@@ -84,7 +84,7 @@ ipcMain.handle("app:checkUpdate", async () => {
   try {
     const cur = app.getVersion();
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 15000);
-    let r; try { r = await fetch("https://api.github.com/repos/Darknode-Official/Darknode-Official/darknode-app/releases/latest", { headers: { "User-Agent": "Darknode" }, signal: ctrl.signal }); } finally { clearTimeout(to); }
+    let r; try { r = await fetch("https://api.github.com/repos/Darknode-Official/darknode-app/releases/latest", { headers: { "User-Agent": "Darknode" }, signal: ctrl.signal }); } finally { clearTimeout(to); }
     if (!r.ok) return { ok: false };
     const d = await r.json();
     const vers = (d.assets || []).map((a) => (a.name.match(/(\d+\.\d+\.\d+)/) || [])[1]).filter(Boolean).sort(cmp);
