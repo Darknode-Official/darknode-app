@@ -116,8 +116,15 @@ function isPrivateHost(h) {
   if (!h) return true;
   if (h === "localhost" || h.endsWith(".localhost")) return true;
   if (h === "::" || h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
+  if (/^(0{1,4}:){7}0{0,3}1$/.test(h)) return true;    // fully-expanded IPv6 loopback (0:0:0:0:0:0:0:1)
   const mapped = h.match(/^::ffff:(.+)$/i);            // IPv4-mapped IPv6 -> check the v4 tail
-  if (mapped) return isPrivateHost(mapped[1]);
+  if (mapped) {
+    const tail = mapped[1];
+    if (tail.includes(".")) return isPrivateHost(tail);         // dotted form ::ffff:127.0.0.1
+    const hx = tail.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i); // hex form ::ffff:7f00:0001
+    if (hx) { const hi = parseInt(hx[1], 16), lo = parseInt(hx[2], 16); return isPrivateHost([(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255].join(".")); }
+    return false;
+  }
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const a = +m[1], b = +m[2];
@@ -143,6 +150,28 @@ async function resolvesToPrivate(host) {
     const addrs = await require("dns").promises.lookup(host, { all: true });
     return addrs.length === 0 || addrs.some((a) => isPrivateHost(a.address));
   } catch (_) { return true; }
+}
+// fetch() that re-runs the SSRF guard on EVERY redirect hop. undici follows 3xx
+// transparently, so guarding only the initial host lets a public URL redirect
+// into loopback / cloud-metadata / private ranges. We follow manually and
+// re-validate each Location before requesting it. Throws { blocked:true } when a
+// hop is disallowed. Node's fetch exposes the Location header on manual
+// redirects (unlike browsers), so this is reliable in the main process.
+async function safeFetch(url, options = {}, maxRedirects = 5) {
+  let current = String(url);
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    let host;
+    try { host = new URL(current).hostname; } catch (_) { throw new Error("bad url"); }
+    if (isPrivateHost(host) || await resolvesToPrivate(host)) {
+      const e = new Error("blocked host (loopback/link-local/private not allowed)"); e.blocked = true; throw e;
+    }
+    const res = await fetch(current, Object.assign({}, options, { redirect: "manual" }));
+    const loc = (res.status >= 300 && res.status < 400) ? res.headers.get("location") : null;
+    if (!loc) return res;
+    try { current = new URL(loc, current).href; } catch (_) { throw new Error("bad redirect location"); }
+    if (!/^https?:\/\//i.test(current)) { const e = new Error("blocked redirect scheme"); e.blocked = true; throw e; }
+  }
+  throw new Error("too many redirects");
 }
 async function gmailExchange(params) {
   const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params).toString() });
@@ -201,12 +230,10 @@ ipcMain.handle("net:get", async (_e, opts) => {
   const { url, headers, method, body } = opts || {};
   try {
     if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, status: 0, error: "bad url" };
-    let host = ""; try { host = new URL(url).hostname; } catch (_) { return { ok: false, status: 0, error: "bad url" }; }
-    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, status: 0, error: "blocked host (loopback/link-local/private not allowed)" };
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 20000);
     try {
-      const r = await fetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
+      const r = await safeFetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
       const ct = r.headers.get("content-type") || "";
       const data = ct.includes("json") ? await r.json().catch(() => null) : await r.text();
       return { ok: r.ok, status: r.status, data };
@@ -555,20 +582,16 @@ ipcMain.handle("cve:search", async (_e, q) => {
 // ---- HTTP request tool (repeater). Runs in main to dodge renderer CSP/CORS. ----
 ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout }) => {
   const t0 = Date.now();
-  // SSRF guard: block private/loopback/link-local hosts (same as net:get).
-  try {
-    if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, error: "bad url", ms: 0 };
-    const host = new URL(url).hostname;
-    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, error: "blocked host (loopback/link-local/private not allowed)", ms: 0 };
-  } catch (_) { return { ok: false, error: "bad url", ms: 0 }; }
+  if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, error: "bad url", ms: 0 };
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), timeout || 20000);
   try {
     const m = (method || "GET").toUpperCase();
-    const res = await fetch(url, {
+    // safeFetch re-validates the SSRF guard on every redirect hop (see helper).
+    const res = await safeFetch(url, {
       method: m, headers: headers || {},
       body: (m === "GET" || m === "HEAD") ? undefined : (body || undefined),
-      signal: ctrl.signal, redirect: "follow",
+      signal: ctrl.signal,
     });
     const text = await res.text();
     const hdrs = {}; res.headers.forEach((v, k) => (hdrs[k] = v));
@@ -1088,10 +1111,15 @@ ipcMain.handle("vm:screendump", async (_e, { id }) => {
     try {
       const buf = fs.readFileSync(ppm);
       // parse P6 PPM: "P6\n<w> <h>\n255\n<rgb bytes>"
-      let p = 0; const tok = () => { while (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d) p++; let s = p; while (buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
+      let p = 0; const tok = () => { while (p < buf.length && (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d)) p++; let s = p; while (p < buf.length && buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
       if (tok() !== "P6") return { ok: false, error: "bad ppm" };
       const w = +tok(), h = +tok(); tok(); p++; // skip maxval + single whitespace
-      const rgb = buf.slice(p); const bgra = Buffer.alloc(w * h * 4);
+      // Validate dimensions before allocating: a truncated/corrupt dump otherwise
+      // NaNs the size (Buffer.alloc throws) or, with the old unbounded tok(), spun p past EOF.
+      if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0 || w * h > 50000000) return { ok: false, error: "bad ppm dimensions" };
+      const rgb = buf.slice(p);
+      if (rgb.length < w * h * 3) return { ok: false, error: "truncated ppm" };
+      const bgra = Buffer.alloc(w * h * 4);
       for (let i = 0, j = 0; i < w * h; i++) { bgra[j] = rgb[i * 3 + 2]; bgra[j + 1] = rgb[i * 3 + 1]; bgra[j + 2] = rgb[i * 3]; bgra[j + 3] = 255; j += 4; }
       const { nativeImage } = require("electron");
       const img = nativeImage.createFromBitmap(bgra, { width: w, height: h });
