@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("darknode", {
   govComplianceBuild: (opts) => ipcRenderer.invoke("gov:compliance:build", opts),
   govComplianceVerify: (bundle, signingKey) => ipcRenderer.invoke("gov:compliance:verify", { bundle, signingKey }),
   openExternal: (url) => ipcRenderer.invoke("openExternal", url),
+  openPath: (p) => ipcRenderer.invoke("openPath", p),
   winMin: () => ipcRenderer.invoke("win:minimize"),
   winMax: () => ipcRenderer.invoke("win:maximize"),
   winClose: () => ipcRenderer.invoke("win:close"),
