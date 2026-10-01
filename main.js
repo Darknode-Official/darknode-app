@@ -555,6 +555,14 @@ ipcMain.handle("openExternal", (_e, url) => {
   try { const p = new URL(String(url)).protocol; if (p === "http:" || p === "https:") return shell.openExternal(url); } catch (_) {}
   return false;
 });
+// Open a LOCAL file or folder in the OS default handler. Kept separate from
+// openExternal (which is web-only on purpose) so a browsed/redirected page can't
+// smuggle a file path through the web-link path. shell.openPath returns "" on
+// success or an error string, which the caller surfaces truthfully.
+ipcMain.handle("openPath", async (_e, p) => {
+  try { const err = await shell.openPath(String(p || "")); return { ok: !err, error: err || undefined }; }
+  catch (e) { return { ok: false, error: (e && e.message) || "open failed" }; }
+});
 
 // ---- custom (frameless) window controls ----
 ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
@@ -634,7 +642,7 @@ ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency 
     const finish = (isOpen) => { if (done) return; done = true; try { sock.destroy(); } catch (_) {}
       if (isOpen) { open++; win && win.webContents.send("scan:hit", { id, port, banner: banner.slice(0, 80) }); } res(); };
     sock.setTimeout(to);
-    sock.once("connect", () => { sock.once("data", (d) => { banner = d.toString("utf8").replace(/[^\x20-\x7e]/g, " ").trim(); finish(true); }); setTimeout(() => finish(true), 150); });
+    sock.once("connect", () => { sock.setTimeout(0); sock.once("data", (d) => { banner = d.toString("utf8").replace(/[^\x20-\x7e]/g, " ").trim(); finish(true); }); setTimeout(() => finish(true), 150); });
     sock.once("timeout", () => finish(false));
     sock.once("error", () => finish(false));
     try { sock.connect(port, host); } catch (_) { finish(false); }
