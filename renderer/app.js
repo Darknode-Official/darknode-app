@@ -3772,7 +3772,7 @@ darknode api stop</code></pre>
           ${ENDPOINTS.map((ep, i) => `
             <div class="api-ep" data-idx="${i}" style="border:1px solid var(--line,#1b2333);border-radius:6px;margin-bottom:8px;overflow:hidden">
               <div class="api-ep-hdr" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--bg2,#0d1117)">
-                <span style="font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(0,200,150,.15);color:#0c8">POST</span>
+                <span style="font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:4px;background:rgba(0,200,150,.15);color:#0c8">${esc(ep.method || "POST")}</span>
                 <code style="font-size:.82rem">${esc(ep.path)}</code>
                 <span class="dim" style="margin-left:auto;font-size:.78rem">${esc(ep.desc)}</span>
                 <span class="api-ep-tog" style="font-weight:700;color:var(--dim,#888)">+</span>
