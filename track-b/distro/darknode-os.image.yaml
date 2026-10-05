@@ -1,0 +1,110 @@
+# DO-010 — Darknode OS (shipping) declarative image definition.
+#
+# This is the SINGLE source of truth for the shipping image. Images are built
+# ONLY from this file by the build pipeline; hand-built images are forbidden.
+# This file is a SKELETON: it declares the required properties (base, packages,
+# reproducibility, signing, Secure Boot, full-disk encryption, outputs). It is
+# not yet wired to a build host — see distro/README.md for status.
+#
+# Consumed by the conformance checker (hardening/conformance-check.mjs) and,
+# when a build host exists, by the image builder (mkosi-class, reproducible).
+
+schemaVersion: 1
+
+metadata:
+  name: "Darknode OS"            # the SHIPPING product (Linux distribution)
+  track: B                       # DO-001 signed decision
+  # NOTE: the from-scratch kernel "Darknode Obsidian" is a SEPARATE research
+  # project and is deliberately NOT part of this image.
+  variant: workstation
+  architecture: amd64
+
+base:
+  # Chosen base: Debian 12 (bookworm) stable. Justification (DO-010):
+  #  - Reproducibility: Debian's reproducible-builds effort is the most mature,
+  #    and snapshot.debian.org lets us pin the archive to an exact timestamp so
+  #    two builds of this file produce bit-identical images.
+  #  - Signed packages from signed repos: apt + the Debian archive keyring.
+  #  - Secure Boot: Debian ships a signed shim (shim-signed) we can build on.
+  #  - Stability + long support suit a security platform.
+  # Rejected: Kali base (rolling; weaker reproducibility/stability — we instead
+  # pin Kali TOOL packages from the Kali repo, below) and Arch (rolling release
+  # undermines reproducible, unattended builds).
+  distribution: debian
+  suite: bookworm
+  # Exact archive snapshot — pin for bit-identical rebuilds.
+  snapshot: "2026-09-01T00:00:00Z"
+  mirror: "https://snapshot.debian.org/archive/debian"
+
+reproducibility:
+  enabled: true
+  # All three are required for the "two builds -> bit-identical" acceptance test.
+  sourceDateEpoch: 1756684800     # == base.snapshot, seconds
+  deterministicOrdering: true     # sort package install + tar entries
+  stripNondeterminism: true       # normalize timestamps/gzip headers in the image
+  sbom: true                      # emit an SBOM alongside each image
+  acceptance: "two builds from this file produce byte-identical image + identical SBOM"
+
+packages:
+  # The manifest lives in a separate declarative file so it diffs cleanly.
+  manifest: ./packages.yaml
+  # Extra signed repositories (pinned). Keys are referenced by fingerprint;
+  # NO key material is stored in this repo or in the image.
+  repositories:
+    - id: debian-main
+      uri: "https://snapshot.debian.org/archive/debian"
+      suite: bookworm
+      components: [main, contrib, non-free-firmware]
+      signedByFingerprint: "DEBIAN-ARCHIVE-KEYRING"   # reference only
+    - id: kali-tools
+      uri: "https://http.kali.org/kali"
+      suite: kali-rolling
+      components: [main]
+      pin: 100                                          # tools only; base stays Debian
+      signedByFingerprint: "ED444FF07D8D0BF6"           # Kali archive key (reference only)
+
+signing:
+  packages:
+    verify: true                 # refuse unsigned packages at build and update time
+  repository:
+    # The Darknode apt repo that ships first-party packages is itself signed.
+    sign: true
+    keyFingerprint: "DARKNODE-REPO-SIGNING-KEY"         # reference only; key lives in a KMS/HSM
+    keyLocation: external-kms                            # never in-repo, never in-image
+
+secureBoot:
+  # DO-010 requires either an own signed shim or a documented deliberate
+  # decision not to. Decision: SHIP a signed shim chain.
+  mode: signed-shim
+  shim: shim-signed               # from Debian
+  signOwnBootComponents: true     # our kernel + bootloader signed with our key (in KMS)
+  deliberatelyDisabled: false
+
+disk:
+  fullDiskEncryption:
+    enabled: true                 # DO-010: FDE on by default
+    method: luks2
+    cipher: aes-xts-plain64
+    # No passphrase or recovery key is stored here or in the image; set at install.
+    bindToTpm2: whereAvailable
+  filesystem: btrfs
+  subvolumes: [root, home, var-log]   # var-log subvolume supports the append-only audit journal
+
+outputs:
+  liveIso:
+    enabled: true
+  installer:
+    enabled: true
+    unattendedProfile: ./install-unattended.example.yaml   # NOT YET AUTHORED (see README)
+  upgrade:
+    # In-place upgrade path must be tested in CI (DO-010 acceptance).
+    channel: stable
+    tested: false                 # NOT YET EXECUTED — no build host/CI yet
+
+agentService:
+  # The Nexus agent ships as a supervised system service (see ../agent-control).
+  enable: true
+  unit: darknode-agent.service
+  # Its authorization/audit controls are the DO-013 release gate.
+  policyEngine: ../agent-control/policy.mjs
+  auditJournal: /var/log/darknode/audit   # append-only, on its own subvolume

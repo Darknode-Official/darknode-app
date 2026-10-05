@@ -1,0 +1,50 @@
+# DO-014 — Darknode OS hardening baseline.
+# Declarative security posture the shipping image must satisfy. The conformance
+# checker (conformance-check.mjs) evaluates these against the image definition
+# and the repo. Checks that require a built image or running hardware are marked
+# evaluable:false and reported as NOT YET EVALUATED, never as passing.
+
+schemaVersion: 1
+
+controls:
+  mandatoryAccessControl:
+    required: true
+    mode: enforcing              # not permissive
+    source: apparmor
+    evaluable: true              # against config now; runtime state needs an image
+
+  sandboxing:
+    required: true
+    mustSandbox: [agent, browser, network-facing-services]
+    evaluable: false             # needs a running image to confirm confinement
+
+  verifiedBoot:
+    required: true
+    where: hardware-supports
+    evaluable: false             # needs real hardware / Secure Boot chain
+
+  encryptedStorageByDefault:
+    required: true
+    evaluable: true              # read disk.fullDiskEncryption.enabled from image def
+
+  secretsStore:
+    required: true
+    backing: hardware-backed-where-available
+    neverPlaintextConfig: true
+    neverInImage: true
+    evaluable: true              # secret scan over configs + image inputs
+
+  noDefaultOrSharedCredentials:
+    # TOP PRIORITY per DO-014: this product line already had an incident where a
+    # single credential was operable by a party other than its owner.
+    required: true
+    evaluable: true              # scan configs/inputs for embedded/default creds
+
+  hardeningConformanceInCI:
+    required: true
+    runsAgainstEveryBuiltImage: true
+    evaluable: false             # needs CI + a built image
+
+acceptance: >
+  The conformance check runs in CI against every built image; secret scanning
+  passes on the image and the full git history.
