@@ -62,6 +62,7 @@ git clone https://github.com/Darknode-Official/darknode-app
 cd darknode-app && npm install
 npm start                      # run in development
 npm run build                  # package (.deb / AppImage / .exe)
+npm test                       # run the unit/native-path/security test suite
 ```
 
 ## Status
@@ -69,10 +70,38 @@ npm run build                  # package (.deb / AppImage / .exe)
 Active. The VM runner can build and boot a customized Darknode OS on a chosen base
 (Debian / Ubuntu / Kali) directly from the app.
 
+## What works offline vs online
+
+The brief and repo metadata have described this app as "offline-first"; to be
+exact about what that means (measured 2026-10-04):
+
+- **Works with no network:** the 73 in-app offline tools (`renderer/webtools-native.js`
+  — hashing, encoding, ciphers, generators, net math), file forensics, encode/decode,
+  notes, reference libraries, and any locally-installed CLI tool run from the Tools
+  section. Local AI via **Ollama** runs on-device. There is no sign-in gate, so a
+  network-isolated launch reaches full local capability.
+- **Needs network:** the hosted AI engines (Claude, OpenAI-compatible, the Darknode
+  proxy), the update check (GitHub Releases), CVE/threat lookups, live recon that
+  contacts real hosts (DNS/WHOIS/TLS/subdomains/scan/fuzz against a remote target),
+  and the "Web tools" grid (which opens the darknode.ai catalog in the system browser).
+
+Tool-count note: the app ships **98** native CLI-tool launchers, **73** offline
+in-app tools, and mirrors **843** darknode.ai Toolbox tiles (external links). The
+older "164+ tools" figure is not reproducible against this tree; use the measured
+numbers above.
+
+## Planning documents
+
+`EXPANSION-PLAN.md` and `BUILDLOG.md` are **planning / historical** records, not a
+description of the current shipped state. Treat the capability matrix
+(`docs/CAPABILITY-PARITY.md`) and the per-item docs under `docs/` as the current
+ground truth.
+
 ## Security
 
 The app runs local tools, VMs, and shells. The renderer is sandboxed from the OS;
-all privileged actions cross a validated IPC boundary. Never commit `oauth.config.json`.
+all privileged actions cross a validated IPC boundary (see
+`docs/SECURITY-ELECTRON-AUDIT.md`). Never commit `oauth.config.json`.
 
 ## License
 
