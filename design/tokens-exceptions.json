@@ -1,0 +1,25 @@
+{
+  "_comment": "DA-004 token-drift baseline. Each entry is a desktop token whose value currently diverges from design/tokens.css (the canonical source of truth extracted from darknode-web). These are pre-existing forks of the design system; the drift guard (test/design/tokens-drift.test.mjs) FAILS if a NEW divergence appears or if an entry here no longer diverges (remove it then). Goal: shrink to empty as the desktop is unified to canonical in a session that can render and visually diff. Values changed here alter the desktop's appearance, so unification is deferred until it can be visually verified.",
+  "reason": "Desktop shipped a forked design system before DA-004; unify to canonical once renderable visual verification is possible.",
+  "dark": {
+    "--card": { "desktop": "#0e1424", "canonical": "#0f1726" },
+    "--card2": { "desktop": "#131c2f", "canonical": "#151f34" },
+    "--line": { "desktop": "#1e2a44", "canonical": "#283a5a" },
+    "--line-2": { "desktop": "#2b3b5c", "canonical": "#354d72" },
+    "--mut": { "desktop": "#6f88ab", "canonical": "#7a93b8" },
+    "--sh-1": { "desktop": "0 1px 2px rgba(0,0,0,.4)", "canonical": "0 1px 3px rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.2)" },
+    "--sh-2": { "desktop": "0 6px 22px -8px rgba(0,0,0,.55)", "canonical": "0 4px 6px -1px rgba(0,0,0,.3),0 10px 20px -5px rgba(0,0,0,.4)" },
+    "--r-sm": { "desktop": "7px", "canonical": "6px" },
+    "--r-lg": { "desktop": "14px", "canonical": "12px" },
+    "--r-xl": { "desktop": "18px", "canonical": "16px" }
+  },
+  "light": {
+    "--mut": { "desktop": "#64748b", "canonical": "#5b6b86" },
+    "--sh-1": { "desktop": "0 1px 2px rgba(20,30,60,.08)", "canonical": "0 1px 3px rgba(20,30,60,.06),0 1px 2px rgba(20,30,60,.04)" },
+    "--sh-2": { "desktop": "0 8px 24px -10px rgba(20,30,60,.18)", "canonical": "0 4px 6px -1px rgba(20,30,60,.08),0 10px 20px -5px rgba(20,30,60,.12)" }
+  },
+  "nameDivergences": {
+    "_comment": "Desktop token NAMES absent from canonical (parallel system). --bg-2 duplicates canonical --bg2 under a different name; the rest are desktop-only surfaces that should be re-expressed on canonical tokens. Informational; not asserted by the guard.",
+    "desktopOnly": ["--bg-2", "--surface-3", "--ring", "--sh-pop", "--r"]
+  }
+}
