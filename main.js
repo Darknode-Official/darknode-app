@@ -19,6 +19,7 @@ const { buildBundle, verifyBundle, renderBundleMd } = require("./lib/compliance"
 const toolkit = require("./lib/toolkit");
 const { scanPorts } = require("./lib/recon/portscan");
 const { fuzzDirs } = require("./lib/recon/fuzz");
+const { safeFetch } = require("./lib/net/guard");
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -113,39 +114,9 @@ const GMAIL_OAUTH = {
 const b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 // Block loopback / link-local (incl. cloud metadata 169.254.169.254) / private
 // ranges so net:get can't be turned into an SSRF/exfil channel by tool input.
-function isPrivateHost(h) {
-  h = String(h || "").toLowerCase().replace(/^\[|\]$/g, "");
-  if (!h) return true;
-  if (h === "localhost" || h.endsWith(".localhost")) return true;
-  if (h === "::" || h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
-  const mapped = h.match(/^::ffff:(.+)$/i);            // IPv4-mapped IPv6 -> check the v4 tail
-  if (mapped) return isPrivateHost(mapped[1]);
-  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (m) {
-    const a = +m[1], b = +m[2];
-    if (a > 255 || b > 255 || +m[3] > 255 || +m[4] > 255) return true; // malformed -> deny
-    if (a === 127 || a === 0 || a === 10) return true;
-    if (a === 169 && b === 254) return true;           // link-local + cloud metadata
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    return false;
-  }
-  // Not a dotted-quad literal: any non-canonical numeric encoding (decimal/hex/octal/
-  // short-form) is only reachable after DNS resolution -- the caller must also check the
-  // RESOLVED address via resolvesToPrivate(). A bare integer host here is suspicious -> deny.
-  if (/^(0x[0-9a-f]+|\d+)$/.test(h)) return true;
-  return false;
-}
-// Resolve a hostname and return true if ANY resolved address is private. Defeats
-// public-name -> private-IP (DNS-rebind) and every non-canonical IPv4 encoding, since
-// dns.lookup canonicalizes them. Fails closed (treat lookup failure as blocked).
-async function resolvesToPrivate(host) {
-  try {
-    const addrs = await require("dns").promises.lookup(host, { all: true });
-    return addrs.length === 0 || addrs.some((a) => isPrivateHost(a.address));
-  } catch (_) { return true; }
-}
+// SSRF guard lives in lib/net/guard.js (isPrivateHost, resolvesToPrivate,
+// validateUrl, safeFetch). safeFetch re-validates EVERY redirect hop so a
+// permitted public host cannot 3xx-redirect the fetch to an internal address.
 async function gmailExchange(params) {
   const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(params).toString() });
   return r.json();
@@ -203,12 +174,11 @@ ipcMain.handle("net:get", async (_e, opts) => {
   const { url, headers, method, body } = opts || {};
   try {
     if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, status: 0, error: "bad url" };
-    let host = ""; try { host = new URL(url).hostname; } catch (_) { return { ok: false, status: 0, error: "bad url" }; }
-    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, status: 0, error: "blocked host (loopback/link-local/private not allowed)" };
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 20000);
     try {
-      const r = await fetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
+      // safeFetch validates the initial host AND every redirect hop (SSRF-safe).
+      const r = await safeFetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
       const ct = r.headers.get("content-type") || "";
       const data = ct.includes("json") ? await r.json().catch(() => null) : await r.text();
       return { ok: r.ok, status: r.status, data };
@@ -557,20 +527,15 @@ ipcMain.handle("cve:search", async (_e, q) => {
 // ---- HTTP request tool (repeater). Runs in main to dodge renderer CSP/CORS. ----
 ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout }) => {
   const t0 = Date.now();
-  // SSRF guard: block private/loopback/link-local hosts (same as net:get).
-  try {
-    if (!/^https?:\/\//i.test(String(url || ""))) return { ok: false, error: "bad url", ms: 0 };
-    const host = new URL(url).hostname;
-    if (isPrivateHost(host) || await resolvesToPrivate(host)) return { ok: false, error: "blocked host (loopback/link-local/private not allowed)", ms: 0 };
-  } catch (_) { return { ok: false, error: "bad url", ms: 0 }; }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), timeout || 20000);
   try {
     const m = (method || "GET").toUpperCase();
-    const res = await fetch(url, {
+    // safeFetch enforces the SSRF guard on the initial host AND every redirect hop.
+    const res = await safeFetch(url, {
       method: m, headers: headers || {},
       body: (m === "GET" || m === "HEAD") ? undefined : (body || undefined),
-      signal: ctrl.signal, redirect: "follow",
+      signal: ctrl.signal,
     });
     const text = await res.text();
     const hdrs = {}; res.headers.forEach((v, k) => (hdrs[k] = v));
