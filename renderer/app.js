@@ -69,6 +69,59 @@
 })();
 
 const S = window.darknode;
+
+// Credential handling (DA-008): secrets must not live in localStorage as
+// plaintext (any process as this OS user, or anyone who copies the profile, can
+// read it). DnSecrets keeps every secret in the OS-keychain-backed vault in the
+// main process and only an in-memory session cache in the renderer. On boot it
+// migrates any legacy plaintext secret out of localStorage into the vault and
+// then deletes the plaintext copy. Reads are sync (cache first, legacy
+// localStorage only as a transitional fallback); writes persist to the vault.
+const DnSecrets = (() => {
+  const KEYS = [
+    "s_anthropic_key", "s_api_key", "s_gh_token",
+    "s_gmail_token", "s_gmail_refresh", "s_gmail_client_secret",
+    "s_vt_key", "s_abuseipdb_key", "s_otx_key", "s_abusech_key",
+  ];
+  const isSecret = (k) => KEYS.indexOf(k) !== -1;
+  const cache = Object.create(null);
+  let hydrated = false;
+  const lsGetRaw = (k) => { try { return localStorage.getItem(k) || ""; } catch (_) { return ""; } };
+  const lsDel = (k) => { try { localStorage.removeItem(k); } catch (_) {} };
+  const lsSetRaw = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (_) {} };
+
+  function get(k) {
+    if (k in cache) return cache[k] || "";
+    return lsGetRaw(k); // transitional fallback until hydrate completes / vault unavailable
+  }
+  async function set(k, v) {
+    v = v == null ? "" : String(v);
+    cache[k] = v;
+    if (S && S.secretSet) {
+      try {
+        if (v) { const r = await S.secretSet(k, v); if (r && r.ok) { lsDel(k); return true; } }
+        else { if (S.secretRemove) await S.secretRemove(k); lsDel(k); return true; }
+      } catch (_) {}
+    }
+    lsSetRaw(k, v); // fallback: keep working even if the vault is unavailable
+    return false;
+  }
+  async function hydrate() {
+    if (hydrated || !(S && S.secretGet)) return;
+    hydrated = true;
+    for (const k of KEYS) {
+      try {
+        const r = await S.secretGet(k);
+        if (r && r.ok && r.value) { cache[k] = r.value; continue; }
+        const legacy = lsGetRaw(k);
+        if (legacy && S.secretSet) { const w = await S.secretSet(k, legacy); if (w && w.ok) { cache[k] = legacy; lsDel(k); } }
+      } catch (_) {}
+    }
+  }
+  try { hydrate(); } catch (_) {}
+  return { get, set, isSecret, KEYS, hydrate };
+})();
+
 const $ = (sel, r = document) => r.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const main = $("#main");
@@ -149,12 +202,12 @@ if (S.onDaiToken) S.onDaiToken((d) => { if (_ollamaTokenCb) _ollamaTokenCb(d); }
 // so the existing planner/verify/compact call sites need no result-shape changes.
 const AI = {
   engine: () => { try { return localStorage.getItem("s_ai_engine") || "ollama"; } catch (_) { return "ollama"; } },
-  key: () => { try { return localStorage.getItem("s_anthropic_key") || ""; } catch (_) { return ""; } },
+  key: () => { try { return DnSecrets.get("s_anthropic_key") || ""; } catch (_) { return ""; } },
   isClaude: () => AI.engine() === "claude",
   // Any model via an OpenAI-compatible API (OpenRouter, Groq, DeepSeek, vLLM, …).
   isApi: () => AI.engine() === "api",
   apiBase: () => { try { return (localStorage.getItem("s_api_base") || "").trim(); } catch (_) { return ""; } },
-  apiKey: () => { try { return (localStorage.getItem("s_api_key") || "").trim(); } catch (_) { return ""; } },
+  apiKey: () => { try { return (DnSecrets.get("s_api_key") || "").trim(); } catch (_) { return ""; } },
   apiModel: () => { try { return (localStorage.getItem("s_api_model") || "").trim(); } catch (_) { return ""; } },
   label: () => AI.isApi() ? ("API" + (AI.apiModel() ? " · " + AI.apiModel() : "")) : AI.isClaude() ? "Claude" : "Ollama (local)",
   stream: (id, body) => AI.isApi() ? S.apiStream(id, body, AI.apiBase(), AI.apiKey(), AI.apiModel()) : AI.isClaude() ? S.claudeStream(id, body, AI.key()) : S.ollamaStream(id, body),
@@ -173,7 +226,7 @@ const AI = {
 //   • "Darknode 13b" / "Darknode 33b" (local): run on the user's device via
 //     Ollama; the model is pulled on first use.
 //   • "Fable" (cloud): a Claude-family model via the user's Anthropic key.
-const DAI_LS = (k, d) => { try { return (localStorage.getItem(k) || "").trim() || d; } catch (_) { return d; } };
+const DAI_LS = (k, d) => { try { return ((DnSecrets.isSecret(k) ? DnSecrets.get(k) : localStorage.getItem(k)) || "").trim() || d; } catch (_) { return d; } };
 const DAI = {
   MODELS: [
     { id: "darknode", name: "Darknode AI", kind: "cloud", sub: "web access" },
@@ -285,7 +338,7 @@ function commandFromText(text) {
   return null;
 }
 function saveOn() { try { return localStorage.getItem("s_save") === "1"; } catch (_) { return false; } }
-function ghCfg() { try { return { token: localStorage.getItem("s_gh_token") || "", name: localStorage.getItem("s_gh_name") || "Darknode", email: localStorage.getItem("s_gh_email") || "darknode@local" }; } catch (_) { return { token: "", name: "Darknode", email: "darknode@local" }; } }
+function ghCfg() { try { return { token: DnSecrets.get("s_gh_token") || "", name: localStorage.getItem("s_gh_name") || "Darknode", email: localStorage.getItem("s_gh_email") || "darknode@local" }; } catch (_) { return { token: "", name: "Darknode", email: "darknode@local" }; } }
 function stamp(base) { const d = new Date(), p = (n) => String(n).padStart(2, "0"); return base + "-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
 function wrapSave(cmd, base) { if (!saveOn()) return cmd; return `mkdir -p ~/darknode-results && { ${cmd} ; } 2>&1 | tee ~/darknode-results/${stamp(base)}.log`; }
 const PLAYBOOKS = [
@@ -947,8 +1000,8 @@ function codeFence(s) { s = String(s); let n = 3; const m = s.match(/`+/g); if (
 const GM_TOK = "s_gmail_token", GM_REFRESH = "s_gmail_refresh", GM_EXP = "s_gmail_exp", GM_CID = "s_gmail_client_id", GM_CSEC = "s_gmail_client_secret", GH_TOK = "s_gh_token", GH_USER = "s_gh_user";
 // The user's own Google OAuth client (Option B) if they set one, else null → built-in.
 const gmCreds = () => { const id = lsGet(GM_CID).trim(), sec = lsGet(GM_CSEC).trim(); return (id && sec) ? { clientId: id, clientSecret: sec } : null; };
-const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch (_) { return ""; } };
-const lsSet = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (_) {} };
+const lsGet = (k) => { try { if (DnSecrets.isSecret(k)) return DnSecrets.get(k); return localStorage.getItem(k) || ""; } catch (_) { return ""; } };
+const lsSet = (k, v) => { try { if (DnSecrets.isSecret(k)) { DnSecrets.set(k, v); return; } v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (_) {} };
 // Silently renew the Gmail access token via the stored refresh token (native OAuth)
 // when it's within a minute of expiring — so the connection never lapses.
 let _gmRefreshing = null;
@@ -2817,15 +2870,15 @@ const sections = {
       const apiBase = $("#agapibase", el), apiKeyIn = $("#agapikey", el), apiModel = $("#agapimodel", el);
       if (engineSel) {
         engineSel.value = (localStorage.getItem("s_ai_engine") || "ollama");
-        keyInput.value = (localStorage.getItem("s_anthropic_key") || "");
+        keyInput.value = (DnSecrets.get("s_anthropic_key") || "");
         if (apiBase) apiBase.value = (localStorage.getItem("s_api_base") || "");
-        if (apiKeyIn) apiKeyIn.value = (localStorage.getItem("s_api_key") || "");
+        if (apiKeyIn) apiKeyIn.value = (DnSecrets.get("s_api_key") || "");
         if (apiModel) apiModel.value = (localStorage.getItem("s_api_model") || "");
         const syncEngine = () => { const e = engineSel.value; keyInput.style.display = e === "claude" ? "" : "none"; const d = e === "api" ? "" : "none"; if (apiBase) apiBase.style.display = d; if (apiKeyIn) apiKeyIn.style.display = d; if (apiModel) apiModel.style.display = d; };
         engineSel.onchange = () => { try { localStorage.setItem("s_ai_engine", engineSel.value); } catch (_) {} syncEngine(); if (stat) { stat.textContent = "engine: " + (engineSel.value === "claude" ? "Claude (cloud)" : engineSel.value === "api" ? "Any model (API)" : "Ollama (local)"); setTimeout(() => { if (stat) stat.textContent = ""; }, 2500); } };
-        const saveKey = () => { try { localStorage.setItem("s_anthropic_key", keyInput.value.trim()); } catch (_) {} };
+        const saveKey = () => { try { DnSecrets.set("s_anthropic_key", keyInput.value.trim()); } catch (_) {} };
         keyInput.onchange = saveKey; keyInput.oninput = saveKey;
-        const saveApi = () => { try { if (apiBase) localStorage.setItem("s_api_base", apiBase.value.trim()); if (apiKeyIn) localStorage.setItem("s_api_key", apiKeyIn.value.trim()); if (apiModel) localStorage.setItem("s_api_model", apiModel.value.trim()); } catch (_) {} };
+        const saveApi = () => { try { if (apiBase) localStorage.setItem("s_api_base", apiBase.value.trim()); if (apiKeyIn) DnSecrets.set("s_api_key", apiKeyIn.value.trim()); if (apiModel) localStorage.setItem("s_api_model", apiModel.value.trim()); } catch (_) {} };
         [apiBase, apiKeyIn, apiModel].forEach((inp) => { if (inp) { inp.onchange = saveApi; inp.oninput = saveApi; } });
         syncEngine();
       }
@@ -3766,7 +3819,7 @@ const sections = {
     const g = ghCfg(); $("#ghtok", el).value = g.token; $("#ghname", el).value = g.name === "Darknode" ? "" : g.name; $("#ghemail", el).value = g.email === "darknode@local" ? "" : g.email;
     $("#ghsave", el).onclick = () => {
       try {
-        localStorage.setItem("s_gh_token", $("#ghtok", el).value.trim());
+        DnSecrets.set("s_gh_token", $("#ghtok", el).value.trim());
         localStorage.setItem("s_gh_name", $("#ghname", el).value.trim() || "Darknode");
         localStorage.setItem("s_gh_email", $("#ghemail", el).value.trim() || "darknode@local");
         const m = $("#ghmsg", el); m.className = "run-status ok"; m.textContent = "saved"; setTimeout(() => (m.textContent = ""), 2000);
@@ -3774,8 +3827,8 @@ const sections = {
     };
     // ---- Darknode AI: local model tags + Fable (Anthropic) key/model ----
     { const t13 = $("#dai13b", el), t33 = $("#dai33b", el), ak = $("#daiakey", el), fm = $("#daifmodel", el);
-      const LG = (key) => { try { return localStorage.getItem(key) || ""; } catch (_) { return ""; } };
-      const setOrDel = (key, v) => { try { if (v) localStorage.setItem(key, v); else localStorage.removeItem(key); } catch (_) {} };
+      const LG = (key) => { try { return (DnSecrets.isSecret(key) ? DnSecrets.get(key) : localStorage.getItem(key)) || ""; } catch (_) { return ""; } };
+      const setOrDel = (key, v) => { try { if (DnSecrets.isSecret(key)) { DnSecrets.set(key, v); return; } if (v) localStorage.setItem(key, v); else localStorage.removeItem(key); } catch (_) {} };
       try { if (t13) t13.value = LG("s_dai_13b"); if (t33) t33.value = LG("s_dai_33b"); if (ak) ak.value = LG("s_anthropic_key"); if (fm) fm.value = LG("s_dai_fable_model"); } catch (_) {}
       const b = $("#daisave", el);
       if (b) b.onclick = () => {

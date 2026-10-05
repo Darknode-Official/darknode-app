@@ -1,7 +1,7 @@
 // Darknode desktop - Electron main process. Runs shell commands (streamed),
 // checks installed tools, and proxies local Ollama. Renderer has no Node access
 // (contextIsolation) and talks only through the preload bridge.
-const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } = require("electron");
 const { spawn, execFile } = require("child_process");
 const os = require("os");
 const path = require("path");
@@ -21,6 +21,21 @@ const { scanPorts } = require("./lib/recon/portscan");
 const { fuzzDirs } = require("./lib/recon/fuzz");
 const { safeFetch } = require("./lib/net/guard");
 const { ScopeEnforcer } = require("./lib/scope/enforce");
+const redactor = require("./lib/secret/redact");
+const { createVault, electronBackend } = require("./lib/secret/vault");
+
+// DA-008: redact secrets from the main-process log channel. Any value the vault
+// holds is registered with the redactor, so even an unusual token is scrubbed
+// here. Shape rules catch the rest. Installed before anything logs.
+(function installRedactingConsole() {
+  for (const level of ["log", "info", "warn", "error", "debug"]) {
+    const orig = console[level] ? console[level].bind(console) : null;
+    if (!orig) continue;
+    console[level] = (...args) => orig(...args.map((a) => {
+      try { return typeof a === "string" ? redactor.redactString(a) : redactor.redact(a); } catch (_) { return a; }
+    }));
+  }
+})();
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -233,7 +248,7 @@ ipcMain.handle("agent:exec", (_e, { command, cwd, timeout, autopass }) => new Pr
         else if (autopass && /(?:[Pp]assword|[Pp]assphrase)(?:\s+for\s+\S+)?:\s*$/.test(tail)) { answers++; try { p.write(autopass + "\r"); } catch (_) {} }
       }
     });
-    p.onExit(({ exitCode }) => { let c = clean(out).trim(); if (autopass) c = c.split(autopass).join("***"); finish({ ok: true, code: exitCode, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
+    p.onExit(({ exitCode }) => { let c = clean(out).trim(); if (autopass) c = c.split(autopass).join("***"); c = redactor.redactString(c); finish({ ok: true, code: exitCode, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
     to = setTimeout(() => { killed = true; try { p.kill(); } catch (_) {} }, timeout || 60000);
     return;
   }
@@ -242,7 +257,7 @@ ipcMain.handle("agent:exec", (_e, { command, cwd, timeout, autopass }) => new Pr
   catch (err) { return finish({ ok: false, error: err.message }); }
   const add = (d) => { if (out.length < cap + 200) out += d.toString(); };
   p.stdout.on("data", add); p.stderr.on("data", add);
-  p.on("close", (code) => { let c = out; if (autopass) c = c.split(autopass).join("***"); finish({ ok: true, code, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
+  p.on("close", (code) => { let c = out; if (autopass) c = c.split(autopass).join("***"); c = redactor.redactString(c); finish({ ok: true, code, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
   p.on("error", (err) => finish({ ok: false, error: err.message }));
   to = setTimeout(() => { killed = true; try { p.kill("SIGKILL"); } catch (_) {} }, timeout || 60000);
 }));
@@ -484,12 +499,26 @@ const govCwd = () => { try { return app.getPath("userData"); } catch (_) { retur
 // Active capabilities (scan/fuzz/subdomains/tls/http) are gated by scope().enforce().
 let _scope = null;
 const scope = () => _scope || (_scope = new ScopeEnforcer(govCwd()));
+
+// DA-008: OS-keychain-backed credential vault. Values are encrypted with the
+// current OS user's safeStorage key (macOS Keychain / Windows DPAPI / Linux
+// libsecret-kwallet) and written as ciphertext to <userData>/.nexus/secrets.enc
+// (mode 0600). Every value read/written is registered with the redactor so it
+// is scrubbed from logs, transcripts, and the usage ledger.
+let _vault = null;
+const vault = () => _vault || (_vault = createVault({ cwd: govCwd(), backend: electronBackend(safeStorage, process.platform) }));
+ipcMain.handle("secret:set", (_e, { name, value }) => { try { const r = vault().set(name, value); if (r.ok) redactor.registerSecret(value); return r; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("secret:get", (_e, name) => { try { const v = vault().get(name); if (v != null) redactor.registerSecret(v); return { ok: true, value: v }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("secret:has", (_e, name) => { try { return { ok: true, has: vault().has(name) }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("secret:list", () => { try { return { ok: true, secrets: vault().list() }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("secret:remove", (_e, name) => { try { return vault().remove(name); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("secret:mode", () => { try { return vault().mode(); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("scope:authorize", (_e, rec) => { try { return scope().addAuthorization(rec || {}); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("scope:list", () => { try { return { ok: true, records: scope().list() }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("scope:revoke", (_e, id) => { try { return scope().revoke(id); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("scope:check", (_e, { kind, target }) => { try { return scope().preview(kind, target); } catch (e) { return { allowed: false, reason: String((e && e.message) || e) }; } });
 ipcMain.handle("gov:identity", () => { try { return resolveOperator({ cwd: govCwd() }); } catch (_) { return { operator: "unknown", team: "", source: "os" }; } });
-ipcMain.handle("gov:usage:append", (_e, rec) => { try { return appendUsage(govCwd(), rec || {}); } catch (_) { return false; } });
+ipcMain.handle("gov:usage:append", (_e, rec) => { try { return appendUsage(govCwd(), redactor.redact(rec || {})); } catch (_) { return false; } });
 ipcMain.handle("gov:usage:report", (_e, opts) => { try { const recs = loadUsage(govCwd(), (opts && opts.since) ? { since: opts.since } : {}); const s = summarize(recs); return { ok: true, summary: s, text: renderReport(s, { project: "Darknode Assistant" }), count: recs.length }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
 ipcMain.handle("gov:compliance:build", (_e, opts) => {
   try {
