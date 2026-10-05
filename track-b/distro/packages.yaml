@@ -1,0 +1,66 @@
+# DO-010 — declarative package manifest for Darknode OS (shipping).
+# Grouped for readability; the builder installs the flattened, de-duplicated,
+# sorted set (deterministicOrdering) from the pinned snapshot.
+#
+# This is a representative skeleton, not the final set. Every entry is a real
+# Debian/Kali package name. No package here is a placeholder standing in for a
+# capability that cannot be provided (contrast the research kernel's painted
+# "browser"): if a browser is listed, a real browser is installed (DO-012).
+
+base:
+  - systemd
+  - linux-image-amd64          # real Linux kernel (NOT the research kernel)
+  - shim-signed
+  - grub-efi-amd64-signed
+  - cryptsetup                 # LUKS2 FDE
+  - tpm2-tools
+  - btrfs-progs
+  - network-manager
+  - pipewire
+  - polkitd
+
+security-mac:                  # DO-014 mandatory access control (enforcing)
+  - apparmor
+  - apparmor-profiles
+  - apparmor-utils
+  - auditd                     # feeds the append-only system audit log
+  - firejail                   # per-app sandboxing for browser + network services
+
+desktop:                       # DO-011 — a REAL compositor + shell (not a skin)
+  # Listed for completeness; the custom compositor is built, not apt-installed,
+  # and is NOT YET EXECUTED (needs a GPU/display host). See ../docs.
+  - wayland-protocols
+  - libwayland-dev
+  - fonts-inter
+  - fonts-jetbrains-mono
+
+browser:                       # DO-012 — a real browser actually installed
+  - firefox-esr
+
+userland:                      # DO-012 — standard userland
+  - bash
+  - zsh
+  - neovim
+  - git
+  - curl
+  - wget
+  - python3
+  - python3-venv
+  - nodejs
+  - podman
+  - buildah
+  - qemu-system-x86
+
+security-tools:                # the real toolchain (pinned from Kali repo)
+  - nmap
+  - masscan
+  - wireshark
+  - tcpdump
+  - sqlmap
+  - hydra
+  - john
+  - hashcat
+  - gobuster
+  - ffuf
+  - metasploit-framework
+  - burpsuite
