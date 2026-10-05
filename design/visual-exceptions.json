@@ -1,0 +1,11 @@
+{
+  "_comment": "DA-004 visual-regression exceptions. Surfaces that intentionally differ between the website and the desktop app, so the screenshot diff does not flag them. An UNDOCUMENTED difference must fail the build; every entry here needs a reason. Desktop-only surfaces must still COMPOSE the canonical design tokens (design/tokens.css), never invent values.",
+  "exceptions": [
+    { "surface": "window-chrome", "reason": "Desktop has a custom frameless title bar (min/max/close via win:* IPC); the website runs in the browser's own chrome. No web counterpart to diff against." },
+    { "surface": "boot-splash", "reason": "Desktop shows a warp-speed boot animation (renderer/app.js bootWarp) gated by prefers-reduced-motion; the website has no boot splash." },
+    { "surface": "terminal-panes", "reason": "Desktop embeds xterm.js live terminals (pty:*); the website cannot run a shell, so there is no shared render." },
+    { "surface": "vm-console", "reason": "Desktop renders a live QEMU framebuffer (vm:screendump); web has no VM console." },
+    { "surface": "native-menus-context-menus", "reason": "Desktop uses platform context menus and an app menu bar; browser context menus differ by platform." },
+    { "surface": "code-workbench", "reason": "Desktop embeds a CodeMirror IDE surface not present on the web console." }
+  ]
+}

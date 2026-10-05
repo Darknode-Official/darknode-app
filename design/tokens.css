@@ -1,0 +1,72 @@
+/*
+ * Darknode shared design tokens — SINGLE SOURCE OF TRUTH (DA-004).
+ *
+ * These custom properties are extracted VERBATIM from the website's design
+ * system: darknode-web/public/css/styles.css (the `:root` and
+ * `:root[data-theme="light"]` token blocks). They are the authoritative values
+ * for color, type scale, spacing, radius, elevation, and motion across BOTH the
+ * website and the desktop app.
+ *
+ * RULES (enforced by test/design/tokens-drift.test.mjs):
+ *   - Do NOT hand-edit values here to suit one surface. Change the website's
+ *     styles.css token block, then re-extract.
+ *   - Do NOT fork these into a parallel desktop definition. Desktop surfaces
+ *     compose THESE tokens; they define no one-off values.
+ *   - Any desktop token whose value diverges from the canonical value here must
+ *     be listed, with its reason, in design/tokens-exceptions.json or the drift
+ *     guard fails.
+ *
+ * Source: darknode-web/public/css/styles.css lines 9-54 (extracted 2026-10-04).
+ * Theme model: explicit `data-theme` ("dark" default, "light" override); the
+ * app also follows OS preference by setting data-theme from prefers-color-scheme
+ * at boot (manual override persisted). No token is redefined under a bare
+ * @media(prefers-color-scheme) block — the website drives theme via data-theme.
+ */
+
+:root{
+  --bg:#070a12; --bg2:#0c1020; --card:#0f1726; --card2:#151f34; --line:#283a5a;
+  --line-2:#354d72; --txt:#e6eefc; --txt-2:#aebfdd; --mut:#7a93b8; --placeholder:#5f7294;
+  --acc:#00d4ff; --acc-2:#7c5cff; --ok:#2ee6a6; --bad:#ff5c6c; --warn:#f5b041; --radius:8px; --btn-radius:4px;
+  --topbar-h:57px;
+  --on-acc:#04121a;
+  --code-bg:#0b0f1a;
+  --code-fg:#d6e2f0;
+  --overlay-bg:rgba(4,8,15,.65);
+  --acc-soft:color-mix(in srgb,var(--acc) 15%,transparent);
+  --acc-line:color-mix(in srgb,var(--acc) 40%,var(--line));
+  --grad-acc:linear-gradient(135deg,var(--acc),color-mix(in srgb,var(--acc) 45%,var(--acc-2)));
+  --sh-1:0 1px 3px rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.2);
+  --sh-2:0 4px 6px -1px rgba(0,0,0,.3),0 10px 20px -5px rgba(0,0,0,.4);
+  --sh-hover:0 8px 25px -5px rgba(0,0,0,.5),0 4px 10px -3px rgba(0,0,0,.3);
+  --ease:cubic-bezier(.4,0,.2,1);
+  --ease-out:cubic-bezier(0,0,.2,1);
+  --ease-spring:cubic-bezier(.175,.885,.32,1.1);
+  --dur:.2s;
+  --dur-slow:.35s;
+  --font-display:'Sora',ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+  --surface:#0f1726; --border:#283a5a;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px; --sp-12:48px; --sp-16:64px;
+  --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.875rem; --fs-md:1rem; --fs-lg:1.125rem; --fs-xl:1.25rem; --fs-2xl:1.5rem; --fs-3xl:2rem; --fs-4xl:2.5rem;
+  --lh-tight:1.25; --lh-normal:1.5; --lh-relaxed:1.65;
+  --fw-normal:400; --fw-medium:500; --fw-semibold:600; --fw-bold:700; --fw-black:800;
+  --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px; --r-2xl:24px; --r-full:9999px;
+  --z-dropdown:100; --z-sticky:200; --z-modal:300; --z-toast:400; --z-tooltip:500;
+  --surface-elevated:color-mix(in srgb,var(--card) 90%,var(--acc));
+  --focus-ring:0 0 0 3px color-mix(in srgb,var(--acc) 25%,transparent);
+  --transition-fast:.15s var(--ease); --transition-normal:.25s var(--ease); --transition-slow:.4s var(--ease);
+}
+
+:root[data-theme="light"]{
+  --bg:#eef1f7; --bg2:#ffffff; --card:#ffffff; --card2:#f2f5fb; --line:#dbe2ee;
+  --line-2:#c6d1e4; --txt:#111826; --txt-2:#3d4a63; --mut:#5b6b86; --placeholder:#7b8ba4;
+  --acc:#0575a6; --ok:#087a52; --bad:#c42d38; --warn:#8a6314;
+  --on-acc:#04121a; --code-bg:#f4f6fa; --code-fg:#2d3748;
+  --overlay-bg:rgba(20,30,60,.45);
+  --sh-1:0 1px 3px rgba(20,30,60,.06),0 1px 2px rgba(20,30,60,.04);
+  --sh-2:0 4px 6px -1px rgba(20,30,60,.08),0 10px 20px -5px rgba(20,30,60,.12);
+  --sh-hover:0 8px 25px -5px rgba(20,30,60,.15),0 4px 10px -3px rgba(20,30,60,.08);
+  --surface:#f4f6fa; --border:#dbe2ee;
+  --surface-elevated:#fff;
+  --focus-ring:0 0 0 3px color-mix(in srgb,var(--acc) 20%,transparent);
+}
