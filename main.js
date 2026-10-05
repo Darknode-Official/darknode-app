@@ -17,6 +17,8 @@ const { resolveOperator } = require("./lib/identity");
 const { appendUsage, loadUsage, summarize, renderReport } = require("./lib/usage");
 const { buildBundle, verifyBundle, renderBundleMd } = require("./lib/compliance");
 const toolkit = require("./lib/toolkit");
+const { scanPorts } = require("./lib/recon/portscan");
+const { fuzzDirs } = require("./lib/recon/fuzz");
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -604,58 +606,29 @@ ipcMain.handle("scan:cancel", (_e, id) => { const s = scans.get(id); if (s) s.ca
 ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency }) => {
   const state = { cancelled: false };
   scans.set(id, state);
-  const to = timeout || 900, conc = Math.min(concurrency || 250, 500), total = ports.length;
-  let idx = 0, open = 0;
-  const probe = (port) => new Promise((res) => {
-    const sock = new net.Socket(); let done = false, banner = "";
-    const finish = (isOpen) => { if (done) return; done = true; try { sock.destroy(); } catch (_) {}
-      if (isOpen) { open++; win && win.webContents.send("scan:hit", { id, port, banner: banner.slice(0, 80) }); } res(); };
-    sock.setTimeout(to);
-    sock.once("connect", () => { sock.once("data", (d) => { banner = d.toString("utf8").replace(/[^\x20-\x7e]/g, " ").trim(); finish(true); }); setTimeout(() => finish(true), 150); });
-    sock.once("timeout", () => finish(false));
-    sock.once("error", () => finish(false));
-    try { sock.connect(port, host); } catch (_) { finish(false); }
+  const r = await scanPorts(host, ports, {
+    timeout, concurrency, signal: state,
+    onHit: (port, banner) => { if (win) win.webContents.send("scan:hit", { id, port, banner }); },
+    onProgress: (done, total) => { if (win) win.webContents.send("scan:progress", { id, done, total }); },
   });
-  const worker = async () => {
-    while (!state.cancelled) {
-      const i = idx++; if (i >= total) return;
-      await probe(ports[i]);
-      if (win) win.webContents.send("scan:progress", { id, done: i + 1, total });
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(conc, total) }, worker));
   scans.delete(id);
-  win && win.webContents.send("scan:done", { id, open, cancelled: state.cancelled });
+  win && win.webContents.send("scan:done", { id, open: r.open, cancelled: r.cancelled });
   return { ok: true };
 });
 
 // ---- directory / content fuzzer (native, streams hits) ----
-function headReq(url, to) {
-  return new Promise((res) => {
-    let u; try { u = new URL(url); } catch (_) { return res(null); }
-    const lib = u.protocol === "https:" ? https : http;
-    const req = lib.request(u, { method: "GET", timeout: to || 8000, rejectUnauthorized: false, headers: { "User-Agent": "Darknode" } }, (r) => {
-      const out = { status: r.statusCode, len: r.headers["content-length"] || "", loc: r.headers["location"] || "" };
-      r.destroy(); res(out);
-    });
-    req.on("timeout", () => { req.destroy(); res(null); });
-    req.on("error", () => res(null));
-    req.end();
-  });
-}
+// Core logic lives in lib/recon/fuzz.js (headReq, fuzzDirs); this handler is the
+// Electron binding that forwards hits/progress to the renderer.
 const fuzzes = new Map();
 ipcMain.handle("fuzz:cancel", (_e, id) => { const s = fuzzes.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("fuzz:dirs", async (_e, { id, base, words, concurrency, timeout }) => {
   const state = { cancelled: false }; fuzzes.set(id, state);
-  base = base.replace(/\/+$/, ""); const to = timeout || 8000, conc = Math.min(concurrency || 25, 50), total = words.length;
-  let idx = 0, hits = 0;
-  const probe = async (word) => {
-    const r = await headReq(base + "/" + word.replace(/^\//, ""), to);
-    if (r && r.status && r.status !== 404) { hits++; win && win.webContents.send("fuzz:hit", { id, path: "/" + word.replace(/^\//, ""), status: r.status, len: r.len, loc: r.loc }); }
-  };
-  const worker = async () => { while (!state.cancelled) { const i = idx++; if (i >= total) return; await probe(words[i]); if (win) win.webContents.send("fuzz:progress", { id, done: i + 1, total }); } };
-  await Promise.all(Array.from({ length: Math.min(conc, total) }, worker));
-  fuzzes.delete(id); win && win.webContents.send("fuzz:done", { id, hits, cancelled: state.cancelled });
+  const r = await fuzzDirs(base, words, {
+    timeout, concurrency, signal: state,
+    onHit: (hit) => { if (win) win.webContents.send("fuzz:hit", { id, path: hit.path, status: hit.status, len: hit.len, loc: hit.loc }); },
+    onProgress: (done, total) => { if (win) win.webContents.send("fuzz:progress", { id, done, total }); },
+  });
+  fuzzes.delete(id); win && win.webContents.send("fuzz:done", { id, hits: r.hits, cancelled: r.cancelled });
   return { ok: true };
 });
 
