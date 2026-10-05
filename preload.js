@@ -85,6 +85,12 @@ contextBridge.exposeInMainWorld("darknode", {
   ghCreatePR: (opts) => ipcRenderer.invoke("github:createPR", opts),
   ghComment: (opts) => ipcRenderer.invoke("github:comment", opts),
   ghCreateGist: (opts) => ipcRenderer.invoke("github:createGist", opts),
+  // Scope authorization (DA-009): create/list/revoke authorization records and
+  // preview whether an active action is in scope. The real gate is enforced in main.
+  scopeAuthorize: (rec) => ipcRenderer.invoke("scope:authorize", rec),
+  scopeList: () => ipcRenderer.invoke("scope:list"),
+  scopeRevoke: (id) => ipcRenderer.invoke("scope:revoke", id),
+  scopeCheck: (kind, target) => ipcRenderer.invoke("scope:check", { kind, target }),
   scanPorts: (opts) => ipcRenderer.invoke("scan:ports", opts),
   scanCancel: (id) => ipcRenderer.invoke("scan:cancel", id),
   onScanHit: (cb) => ipcRenderer.on("scan:hit", (_e, d) => cb(d)),
