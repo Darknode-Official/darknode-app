@@ -20,6 +20,7 @@ const toolkit = require("./lib/toolkit");
 const { scanPorts } = require("./lib/recon/portscan");
 const { fuzzDirs } = require("./lib/recon/fuzz");
 const { safeFetch } = require("./lib/net/guard");
+const { ScopeEnforcer } = require("./lib/scope/enforce");
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -479,6 +480,14 @@ ipcMain.handle("dai:cancel", (_e, id) => { const rq = daiReqs.get(id); if (rq) {
 
 // ---- enterprise governance: usage ledger + signed compliance bundle ----
 const govCwd = () => { try { return app.getPath("userData"); } catch (_) { return os.homedir(); } };
+// Scope-authorization enforcer (DA-009). Lazily built so app paths are ready.
+// Active capabilities (scan/fuzz/subdomains/tls/http) are gated by scope().enforce().
+let _scope = null;
+const scope = () => _scope || (_scope = new ScopeEnforcer(govCwd()));
+ipcMain.handle("scope:authorize", (_e, rec) => { try { return scope().addAuthorization(rec || {}); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("scope:list", () => { try { return { ok: true, records: scope().list() }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("scope:revoke", (_e, id) => { try { return scope().revoke(id); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+ipcMain.handle("scope:check", (_e, { kind, target }) => { try { return scope().preview(kind, target); } catch (e) { return { allowed: false, reason: String((e && e.message) || e) }; } });
 ipcMain.handle("gov:identity", () => { try { return resolveOperator({ cwd: govCwd() }); } catch (_) { return { operator: "unknown", team: "", source: "os" }; } });
 ipcMain.handle("gov:usage:append", (_e, rec) => { try { return appendUsage(govCwd(), rec || {}); } catch (_) { return false; } });
 ipcMain.handle("gov:usage:report", (_e, opts) => { try { const recs = loadUsage(govCwd(), (opts && opts.since) ? { since: opts.since } : {}); const s = summarize(recs); return { ok: true, summary: s, text: renderReport(s, { project: "Darknode Assistant" }), count: recs.length }; } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
@@ -527,6 +536,7 @@ ipcMain.handle("cve:search", async (_e, q) => {
 // ---- HTTP request tool (repeater). Runs in main to dodge renderer CSP/CORS. ----
 ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout }) => {
   const t0 = Date.now();
+  { const g = scope().enforce("http", url); if (!g.allowed) return { ok: false, blocked: true, error: g.reason, ms: 0 }; }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), timeout || 20000);
   try {
@@ -569,6 +579,8 @@ ipcMain.handle("results:reveal", () => shell.openPath(RESULTS_DIR));
 const scans = new Map();
 ipcMain.handle("scan:cancel", (_e, id) => { const s = scans.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency }) => {
+  const g = scope().enforce("scan", host);
+  if (!g.allowed) { win && win.webContents.send("scan:done", { id, open: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false };
   scans.set(id, state);
   const r = await scanPorts(host, ports, {
@@ -587,6 +599,8 @@ ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency 
 const fuzzes = new Map();
 ipcMain.handle("fuzz:cancel", (_e, id) => { const s = fuzzes.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("fuzz:dirs", async (_e, { id, base, words, concurrency, timeout }) => {
+  const g = scope().enforce("fuzz", base);
+  if (!g.allowed) { win && win.webContents.send("fuzz:done", { id, hits: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false }; fuzzes.set(id, state);
   const r = await fuzzDirs(base, words, {
     timeout, concurrency, signal: state,
@@ -635,6 +649,7 @@ ipcMain.handle("whois:query", async (_e, query) => {
 ipcMain.handle("tls:cert", async (_e, { host, port }) => {
   host = (host || "").trim().replace(/^https?:\/\//, "").split("/")[0];
   port = port || 443;
+  { const g = scope().enforce("tls", host); if (!g.allowed) return { ok: false, blocked: true, error: g.reason }; }
   return new Promise((res) => {
     let done = false; const finish = (v) => { if (done) return; done = true; res(v); };
     const s = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout: 9000 }, () => {
@@ -797,6 +812,7 @@ ipcMain.handle("git:push", async (_e, { dir, message, token, name, email }) => {
 ipcMain.handle("subdomains:find", async (_e, domain) => {
   domain = (domain || "").trim().replace(/^https?:\/\//, "").split("/")[0].toLowerCase();
   if (!domain) return { ok: false, error: "no domain" };
+  { const g = scope().enforce("subdomains", domain); if (!g.allowed) return { ok: false, blocked: true, error: g.reason }; }
   const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch("https://crt.sh/?q=%25." + encodeURIComponent(domain) + "&output=json", { signal: ctrl.signal, headers: { "User-Agent": "Darknode" } });

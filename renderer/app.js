@@ -75,6 +75,57 @@ const main = $("#main");
 const page = $("#page");
 function targetVal() { const t = $("#target"); return ((t && t.value) || "").trim(); }
 function subTarget(cmd) { return cmd.replace(/\{target\}/g, targetVal() || "target"); }
+
+// Scope authorization (DA-009): the main process refuses any active action
+// (scan/fuzz/subdomains/tls/http) that lacks an authorization record. This is a
+// convenience in front of that gate: if the target is not already in scope, show
+// an in-app authorization form (never a native dialog) so the operator can record
+// the attesting party + time window before the tool runs. The executor still
+// enforces regardless of this UI. Resolves true if authorized, false if declined.
+async function ensureScope(kind, rawTarget) {
+  const target = String(rawTarget || "").trim();
+  if (!target) return false;
+  try { const pre = await S.scopeCheck(kind, target); if (pre && pre.allowed) return true; } catch (_) {}
+  return new Promise((resolve) => {
+    const now = new Date();
+    const wk = new Date(now.getTime() + 7 * 864e5);
+    const iso = (d) => d.toISOString().slice(0, 16); // for datetime-local
+    const ov = document.createElement("div");
+    ov.className = "pal"; // reuse the palette overlay styling (dimmed backdrop)
+    ov.innerHTML = `
+      <div class="pal-box" style="max-width:520px;padding:18px">
+        <h2 style="margin:0 0 4px">Authorize ${esc(kind)} on ${esc(target)}</h2>
+        <p class="muted" style="font-size:.82rem;margin:0 0 12px">Active actions require a recorded authorization: the target, the activity class, a time window, and an attesting party. This is written to the tamper-evident governance log. Only authorize targets you own or are explicitly permitted to test.</p>
+        <label class="pb-f"><span>Attesting party</span><input class="in" id="sc-by" placeholder="name / ticket / engagement ref" spellcheck="false"></label>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <label class="pb-f" style="flex:1"><span>From</span><input class="in" id="sc-from" type="datetime-local" value="${iso(now)}"></label>
+          <label class="pb-f" style="flex:1"><span>To</span><input class="in" id="sc-to" type="datetime-local" value="${iso(wk)}"></label>
+        </div>
+        <label class="pb-f" style="margin-top:8px"><span>Note (optional)</span><input class="in" id="sc-note" placeholder="scope notes" spellcheck="false"></label>
+        <div id="sc-err" style="color:var(--bad);font-size:.8rem;min-height:1em;margin-top:8px"></div>
+        <div class="btns" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn ghost sm" id="sc-cancel">Cancel</button>
+          <button class="btn sm" id="sc-ok">Authorize</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = (v) => { ov.remove(); resolve(v); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) close(false); });
+    $("#sc-cancel", ov).onclick = () => close(false);
+    $("#sc-by", ov).focus();
+    $("#sc-ok", ov).onclick = async () => {
+      const attestedBy = $("#sc-by", ov).value.trim();
+      const from = $("#sc-from", ov).value, to = $("#sc-to", ov).value;
+      const err = $("#sc-err", ov);
+      if (!attestedBy) { err.textContent = "An attesting party is required."; return; }
+      const cls = "active"; // every kind routed through ensureScope is an active capability
+      let r; try {
+        r = await S.scopeAuthorize({ targets: [target], activityClasses: [cls], from: new Date(from).toISOString(), to: new Date(to).toISOString(), attestedBy, note: $("#sc-note", ov).value.trim() });
+      } catch (e) { err.textContent = String((e && e.message) || e); return; }
+      if (r && r.ok) close(true); else err.textContent = (r && r.error) || "Could not record authorization.";
+    };
+  });
+}
 // Minimal markdown -> HTML (code fences with copy, inline code, bold).
 function mdHtml(t) {
   return String(t).split("```").map((seg, i) => {
@@ -2286,6 +2337,7 @@ const sections = {
     }
     async function run() {
       const host = $$("shost").value.trim(); if (!host) return;
+      if (!await ensureScope("scan", host)) { $$("sstat").className = "run-status"; $$("sstat").textContent = "Scan not authorized for " + host + "."; return; }
       openPorts = []; $$("stbody").innerHTML = ""; $$("stab").hidden = true; $$("sactions").hidden = true;
       const ports = portsFor(); curId = "s" + Date.now();
       setRunning(true); $$("sfill").style.width = "0%"; $$("sstat").className = "run-status"; $$("sstat").textContent = `Scanning ${host} (${ports.length} ports)...`;
@@ -2337,6 +2389,7 @@ const sections = {
     async function run() {
       let base = $$("furl").value.trim(); if (!base) return;
       if (!/^https?:\/\//i.test(base)) base = "http://" + base;
+      if (!await ensureScope("fuzz", base)) { $$("fstat").className = "run-status"; $$("fstat").textContent = "Fuzzing not authorized for " + base + "."; return; }
       const words = await wordsFor();
       $$("ftbody").innerHTML = ""; $$("ftab").hidden = true; curId = "f" + Date.now();
       setRunning(true); $$("ffill").style.width = "0%"; $$("fstat").className = "run-status"; $$("fstat").textContent = `Fuzzing ${base} (${words.length} paths)...`;
