@@ -91,6 +91,15 @@ contextBridge.exposeInMainWorld("darknode", {
   scopeList: () => ipcRenderer.invoke("scope:list"),
   scopeRevoke: (id) => ipcRenderer.invoke("scope:revoke", id),
   scopeCheck: (kind, target) => ipcRenderer.invoke("scope:check", { kind, target }),
+  // Credential vault (DA-008): secrets are encrypted at rest with the OS user's
+  // keychain key in the main process; the renderer only ever hands over / asks
+  // for a named value and never writes ciphertext itself.
+  secretSet: (name, value) => ipcRenderer.invoke("secret:set", { name, value }),
+  secretGet: (name) => ipcRenderer.invoke("secret:get", name),
+  secretHas: (name) => ipcRenderer.invoke("secret:has", name),
+  secretList: () => ipcRenderer.invoke("secret:list"),
+  secretRemove: (name) => ipcRenderer.invoke("secret:remove", name),
+  secretMode: () => ipcRenderer.invoke("secret:mode"),
   scanPorts: (opts) => ipcRenderer.invoke("scan:ports", opts),
   scanCancel: (id) => ipcRenderer.invoke("scan:cancel", id),
   onScanHit: (cb) => ipcRenderer.on("scan:hit", (_e, d) => cb(d)),

@@ -22,6 +22,7 @@
     "postinstall": "electron-builder install-app-deps",
     "start": "electron .",
     "test": "node test/run.mjs",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
     "dist:mac": "electron-builder --mac dmg zip --publish never",
