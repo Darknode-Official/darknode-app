@@ -25,7 +25,7 @@
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg zip --publish never",
+    "dist:mac": "electron-builder --mac dmg zip",
     "dist": "electron-builder -mwl",
     "publish:release": "bash scripts/publish-release.sh"
   },
