@@ -4,12 +4,20 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # electron-builder auto-publishes to the GitHub Release matching the git
+      # tag; it needs a token to upload the installers + latest*.yml metadata
+      # (the latter is what the in-app auto-updater reads).
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
