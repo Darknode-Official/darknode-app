@@ -67,7 +67,15 @@
         "zip"
       ],
       "icon": "build/icon.icns"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Darknode-Official",
+        "repo": "darknode-app",
+        "releaseType": "release"
+      }
+    ]
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
