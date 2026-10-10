@@ -43,7 +43,8 @@
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "lib/**/*"
+      "lib/**/*",
+      "design/**/*"
     ],
     "linux": {
       "target": [
