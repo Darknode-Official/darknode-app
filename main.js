@@ -16,6 +16,7 @@ const { toAnthropicBody, anthropicDelta, usageOf } = require("./lib/anthropic");
 const { resolveOperator } = require("./lib/identity");
 const { appendUsage, loadUsage, summarize, renderReport } = require("./lib/usage");
 const { buildBundle, verifyBundle, renderBundleMd } = require("./lib/compliance");
+const hardeningAudit = require("./lib/hardening-audit");
 const toolkit = require("./lib/toolkit");
 const { scanPorts } = require("./lib/recon/portscan");
 const { fuzzDirs } = require("./lib/recon/fuzz");
@@ -531,6 +532,79 @@ ipcMain.handle("gov:compliance:build", (_e, opts) => {
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 });
 ipcMain.handle("gov:compliance:verify", (_e, { bundle, signingKey }) => { try { return Object.assign({ ok: true }, verifyBundle(bundle, signingKey || process.env.DARKNODE_SIGNING_KEY || undefined)); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; } });
+
+// ---- Workstation Security Audit (CIS Level 1-style, read-only) ----
+// Runs fixed status/query commands for the local machine and parses their real
+// output. execFile (never a shell), a per-command timeout, and NO privilege
+// escalation: a command that is missing, not applicable, or needs root reports
+// `na`/`error` honestly rather than guessing. Evidence is scrubbed through the
+// redactor before it leaves the main process.
+const AUDIT_ALLOWED = new Set([
+  "fdesetup", "/usr/libexec/ApplicationFirewall/socketfilterfw", "defaults", "sysadminctl",
+  "spctl", "csrutil", "sshd", "systemsetup", "lsof", "ls", "manage-bde", "netsh", "sc",
+  "reg", "powershell", "net", "schtasks", "w32tm", "lsblk", "dmsetup", "ufw", "firewall-cmd",
+  "nft", "iptables", "apt-config", "systemctl", "gsettings", "ps", "cat", "getent", "ss",
+  "timedatectl", "mokutil",
+]);
+function auditExec(bin, args) {
+  return new Promise((resolve) => {
+    if (!AUDIT_ALLOWED.has(bin)) { resolve({ na: true, reason: "command not permitted by audit allowlist" }); return; }
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    try {
+      const child = execFile(bin, args || [], { timeout: 8000, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
+        (err, stdout, stderr) => {
+          if (err && err.code === "ENOENT") { finish({ na: true, reason: "command not found (" + bin + ")" }); return; }
+          if (err && err.killed) { finish({ error: "timed out after 8s", code: -1, stdout: String(stdout || ""), stderr: String(stderr || "") }); return; }
+          finish({ ok: true, code: (err && typeof err.code === "number") ? err.code : 0, stdout: String(stdout || ""), stderr: String(stderr || "") });
+        });
+      child.on("error", (e) => { if (e && e.code === "ENOENT") finish({ na: true, reason: "command not found (" + bin + ")" }); else finish({ error: String((e && e.message) || e), code: -1, stdout: "", stderr: "" }); });
+    } catch (e) { finish({ error: String((e && e.message) || e), code: -1, stdout: "", stderr: "" }); }
+  });
+}
+function osDescription() {
+  try {
+    const p = process.platform;
+    if (p === "darwin") return "macOS " + os.release();
+    if (p === "win32") return "Windows " + os.release();
+    return (os.type() || "Linux") + " " + os.release();
+  } catch (_) { return process.platform; }
+}
+ipcMain.handle("audit:run", async () => {
+  try {
+    const report = await hardeningAudit.runAudit({
+      platform: process.platform,
+      exec: auditExec,
+      host: os.hostname(),
+      osDescription: osDescription(),
+      appVersion: app.getVersion(),
+    });
+    // Scrub any secret-shaped content out of every evidence string before it
+    // reaches the renderer / any export.
+    for (const r of report.results) { try { r.evidence = redactor.redact(r.evidence); } catch (_) {} }
+    return { ok: true, report };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+ipcMain.handle("audit:export", (_e, { report, format }) => {
+  try {
+    if (!report || !Array.isArray(report.results)) return { ok: false, error: "no report" };
+    let text, ext, mime;
+    if (format === "csv") { text = hardeningAudit.toCSV(report); ext = "csv"; mime = "text/csv"; }
+    else if (format === "txt") { text = hardeningAudit.toText(report); ext = "txt"; mime = "text/plain"; }
+    else if (format === "fleet") { text = JSON.stringify(hardeningAudit.toFleetRecord(report), null, 2); ext = "json"; mime = "application/json"; }
+    else { text = hardeningAudit.toJSON(report); ext = "json"; mime = "application/json"; }
+    return { ok: true, text, ext, mime };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
+
+ipcMain.handle("audit:save", async (_e, { text, defaultName, ext }) => {
+  try {
+    const r = await dialog.showSaveDialog(win, { defaultPath: defaultName || ("workstation-audit." + (ext || "txt")) });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    await fs.promises.writeFile(r.filePath, String(text == null ? "" : text), "utf8");
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+});
 
 ipcMain.handle("openExternal", (_e, url) => {
   // Only open web URLs in the OS browser -- never file://, or app/protocol-handler

@@ -32,6 +32,10 @@ contextBridge.exposeInMainWorld("darknode", {
   govUsageReport: (opts) => ipcRenderer.invoke("gov:usage:report", opts),
   govComplianceBuild: (opts) => ipcRenderer.invoke("gov:compliance:build", opts),
   govComplianceVerify: (bundle, signingKey) => ipcRenderer.invoke("gov:compliance:verify", { bundle, signingKey }),
+  // Workstation Security Audit (CIS Level 1-style, read-only, main-process).
+  auditRun: () => ipcRenderer.invoke("audit:run"),
+  auditExport: (report, format) => ipcRenderer.invoke("audit:export", { report, format }),
+  auditSave: (text, defaultName, ext) => ipcRenderer.invoke("audit:save", { text, defaultName, ext }),
   openExternal: (url) => ipcRenderer.invoke("openExternal", url),
   winMin: () => ipcRenderer.invoke("win:minimize"),
   winMax: () => ipcRenderer.invoke("win:maximize"),

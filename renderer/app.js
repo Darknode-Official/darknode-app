@@ -1321,6 +1321,108 @@ const sections = {
     setTimeout(() => input.focus(), 60);
   },
 
+  // Workstation Security Audit — CIS Level 1-style checks for THIS machine,
+  // run read-only in the main process (window.darknode.auditRun). Every row
+  // shows the real command output as evidence and the exact fix.
+  audit(el) {
+    el.innerHTML = `
+      <div class="page-head"><h1>Workstation Audit</h1><p class="muted">Checks this machine against CIS Benchmark Level 1 controls: disk encryption, host firewall, automatic updates, screen lock, endpoint protection, SSH, accounts, listening services, remote access and startup items. Read-only — it runs status commands and never changes anything or asks for your password.</p></div>
+      <div class="run-bar" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn" id="au-run">Run audit</button>
+        <span class="muted" id="au-status" style="font-size:.85rem"></span>
+        <span style="flex:1"></span>
+        <button class="btn ghost sm" id="au-json" disabled>Export JSON</button>
+        <button class="btn ghost sm" id="au-csv" disabled>Export CSV</button>
+        <button class="btn ghost sm" id="au-txt" disabled>Export report</button>
+        <button class="btn ghost sm" id="au-fleet" disabled title="Compact record for fleet-wide collection">Fleet record</button>
+      </div>
+      <div id="au-score"></div>
+      <div id="au-out"></div>`;
+    const out = $("#au-out", el), scoreBox = $("#au-score", el), statusEl = $("#au-status", el);
+    const expBtns = ["au-json", "au-csv", "au-txt", "au-fleet"].map((id) => $("#" + id, el));
+    let report = null;
+
+    const SEVRANK = { high: 0, medium: 1, low: 2 };
+    const STATUS_META = {
+      pass: ["PASS", "#2ee6a6"], fail: ["FAIL", "#ff6b6b"], warn: ["WARN", "#f5b544"],
+      na: ["N/A", "#7b8699"], error: ["ERROR", "#ff6b6b"],
+    };
+    const badge = (st) => { const m = STATUS_META[st] || ["?", "#7b8699"]; return `<span style="display:inline-block;min-width:52px;text-align:center;font-size:.68rem;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:5px;color:#05070d;background:${m[1]}">${m[0]}</span>`; };
+
+    function renderScore(rep) {
+      const s = rep.score || {}, c = s.counts || {};
+      const pct = s.percent == null ? "n/a" : s.percent + "%";
+      const col = s.percent == null ? "#7b8699" : (s.percent >= 80 ? "#2ee6a6" : s.percent >= 60 ? "#f5b544" : "#ff6b6b");
+      const chip = (label, n, color) => `<span style="font-size:.8rem;color:var(--txt-2)"><b style="color:${color}">${n}</b> ${label}</span>`;
+      scoreBox.innerHTML = `
+        <section style="border:1px solid var(--line,#1b2333);border-radius:8px;padding:16px;background:var(--card,#0e1320);margin-bottom:14px;display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;align-items:center;min-width:92px">
+            <div style="font-size:1.9rem;font-weight:700;color:${col};line-height:1">${pct}</div>
+            <div class="muted" style="font-size:.74rem">grade ${esc(s.grade || "n/a")}</div>
+          </div>
+          <div style="flex:1;min-width:220px">
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px">
+              ${chip("pass", c.pass || 0, "#2ee6a6")}${chip("fail", c.fail || 0, "#ff6b6b")}${chip("warn", c.warn || 0, "#f5b544")}${chip("n/a", c.na || 0, "#7b8699")}${c.error ? chip("error", c.error, "#ff6b6b") : ""}
+            </div>
+            <div class="muted" style="font-size:.76rem">${esc(rep.os || "")} · ${esc(rep.host || "")} · scored ${esc(String(s.earned))}/${esc(String(s.possible))} weighted points (n/a excluded).</div>
+          </div>
+        </section>`;
+    }
+
+    function renderResults(rep) {
+      const order = { fail: 0, warn: 1, error: 2, pass: 3, na: 4 };
+      const rows = rep.results.slice().sort((a, b) => (order[a.status] - order[b.status]) || (SEVRANK[a.severity] - SEVRANK[b.severity]) || a.id.localeCompare(b.id));
+      out.innerHTML = rows.map((r) => {
+        const showFix = r.status !== "pass" && r.fix;
+        return `
+        <details class="au-row" style="border:1px solid var(--line,#1b2333);border-radius:8px;background:var(--card,#0e1320);margin-bottom:8px">
+          <summary style="list-style:none;cursor:pointer;padding:11px 14px;display:flex;gap:12px;align-items:center">
+            ${badge(r.status)}
+            <span style="flex:1;font-weight:600">${esc(r.title)}</span>
+            <span class="muted" style="font-size:.74rem;white-space:nowrap">${esc(r.cisRef)}</span>
+            <span class="muted" style="font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;opacity:.8">${esc(r.severity)}</span>
+          </summary>
+          <div style="padding:0 14px 13px 14px;border-top:1px solid var(--line,#1b2333)">
+            <div class="muted" style="font-size:.72rem;margin:10px 0 4px">Evidence</div>
+            <pre style="margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.76rem;line-height:1.45;color:var(--txt-2)">${esc(r.evidence || "(none)")}</pre>
+            ${showFix ? `<div class="muted" style="font-size:.72rem;margin:12px 0 4px">How to fix</div><div style="font-size:.84rem;white-space:pre-wrap">${esc(r.fix)}</div>` : ""}
+          </div>
+        </details>`;
+      }).join("");
+    }
+
+    async function doExport(format, name, asSave) {
+      if (!report) return;
+      let r; try { r = await S.auditExport(report, format); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+      if (!r || !r.ok) { _toast("Export failed: " + ((r && r.error) || "unknown")); return; }
+      if (asSave && S.auditSave) {
+        const sv = await S.auditSave(r.text, name + "." + r.ext, r.ext);
+        if (sv && sv.ok) _toast("Saved to " + sv.path);
+        else if (sv && !sv.canceled) _toast("Save failed: " + (sv.error || "unknown"));
+      } else {
+        try { await navigator.clipboard.writeText(r.text); _toast("Copied " + format.toUpperCase() + " to clipboard"); }
+        catch (_) { _toast("Could not copy"); }
+      }
+    }
+
+    $("#au-run", el).onclick = async () => {
+      const btn = $("#au-run", el);
+      btn.disabled = true; btn.textContent = "Running…"; statusEl.textContent = "Running read-only checks on this machine…";
+      scoreBox.innerHTML = ""; out.innerHTML = "";
+      expBtns.forEach((b) => b && (b.disabled = true));
+      let r; try { r = await S.auditRun(); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+      btn.disabled = false; btn.textContent = "Run audit";
+      if (!r || !r.ok) { statusEl.textContent = ""; out.innerHTML = `<p style="color:#ff6b6b">Audit failed: ${esc((r && r.error) || "unknown error")}</p>`; return; }
+      report = r.report;
+      statusEl.textContent = "Last run " + new Date(report.generated).toLocaleString();
+      expBtns.forEach((b) => b && (b.disabled = false));
+      renderScore(report); renderResults(report);
+    };
+    $("#au-json", el).onclick = () => doExport("json", "workstation-audit", true);
+    $("#au-csv", el).onclick = () => doExport("csv", "workstation-audit", true);
+    $("#au-txt", el).onclick = () => doExport("txt", "workstation-audit", true);
+    $("#au-fleet", el).onclick = () => doExport("fleet", "workstation-audit-fleet", true);
+  },
   // Native file forensics — hashes/entropy/strings/type computed over the real
   // file bytes in the main process (window.darknode.forensicsAnalyze).
   forensics(el) {
@@ -4027,6 +4129,7 @@ function qa(sec, t, d) { return `<button class="qa" data-sec="${sec}"><div class
 let navTrail = [], curSec = "dash";
 // Per-section accent tint (does NOT override the user's chosen --acc; used for headings, active bar, page strip).
 const SECTION_HUE = {
+  audit: "#38bdf8",
   engagement: "#ff6b81", recon: "#ff6b81", scanner: "#ff6b81", fuzzer: "#ff6b81", tools: "#ff6b81", playbooks: "#ff6b81", payloads: "#ff6b81", exploits: "#ff6b81", lab: "#ff6b81",
   vms: "#38bdf8", cloud: "#38bdf8",
   http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", forensics: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
@@ -4067,7 +4170,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
