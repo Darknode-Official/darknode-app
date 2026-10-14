@@ -904,7 +904,7 @@ const TRAINING_APP = {
   "Learning & practice": [
     ["Hack The Box", "https://www.hackthebox.com/", "Hands-on machines and labs, beginner to elite"],
     ["TryHackMe", "https://tryhackme.com/", "Guided rooms and paths for all levels"],
-    ["PortSwigger Academy", "https://portswigger.net/web-security", "Free, world-class web-hacking labs"],
+    ["PortSwigger Academy", "https://portswigger.net/web-security", "Free web-security labs from the Burp Suite team"],
     ["PentesterLab", "https://pentesterlab.com/", "Focused exercises on real vulnerabilities"],
     ["VulnHub", "https://www.vulnhub.com/", "Downloadable vulnerable VMs to practice on"],
     ["OverTheWire", "https://overthewire.org/wargames/", "Classic wargames — start with Bandit"],
