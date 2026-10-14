@@ -1850,13 +1850,13 @@ const sections = {
       </div>
       <div class="grid" id="dh-stats"><div class="stat"><div class="skeleton" style="width:80%;height:1.1em;margin-bottom:6px"></div><div class="skeleton" style="width:50%;height:.85em"></div></div><div class="stat"><div class="skeleton" style="width:70%;height:1.1em;margin-bottom:6px"></div><div class="skeleton" style="width:55%;height:.85em"></div></div><div class="stat"><div class="skeleton" style="width:75%;height:1.1em;margin-bottom:6px"></div><div class="skeleton" style="width:45%;height:.85em"></div></div></div>
       <div id="qa-wrap">
-        <h2>AI &amp; automation</h2>
+        <h2>AI</h2>
         <div class="grid">
           ${qa("agent", "Autonomous Agent", "Give a goal; it uses 27 tools to do it")}
           ${qa("ai", "Local AI chat", "Streaming chat with your Ollama models")}
           ${qa("runner", "Terminal", "Real shells with live output")}
         </div>
-        <h2>Recon &amp; offense</h2>
+        <h2>Recon</h2>
         <div class="grid">
           ${qa("recon", "Recon", "DNS, WHOIS, headers, TLS, subdomains")}
           ${qa("scanner", "Port scanner", "Native TCP scan with banner grabbing")}
@@ -1869,13 +1869,13 @@ const sections = {
           ${qa("cloud", "Cloud", "AWS/GCP/Azure audit + S3 checker")}
           ${qa("wordlists", "Wordlists", "Fetch standard lists or generate one")}
         </div>
-        <h2>Build &amp; reference</h2>
+        <h2>Toolbox</h2>
         <div class="grid">
           ${qa("flagship", "Offline toolbox", "70+ encoders, hashes, ciphers — no internet")}
           ${qa("payloads", "Payloads", "Reverse shells, listeners, msfvenom")}
           ${qa("encode", "Encode / hash", "Base64, hex, URL, JWT, SHA")}
           ${qa("refs", "Reference", "Regex tester, status codes, ports")}
-          ${qa("notes", "Notes & findings", "Per-target scratchpad and findings")}
+          ${qa("notes", "Notes", "Per-target scratchpad and findings")}
         </div>
       </div>`;
     $("#qa-wrap", el).onclick = (e) => { const b = e.target.closest(".qa"); if (b) go(b.dataset.sec); };
@@ -1996,7 +1996,7 @@ const sections = {
   },
 
   payloads(el) {
-    el.innerHTML = `<h1>Payloads &amp; handlers</h1><p class="sub">Build one-liners and start handlers. LHOST defaults to the target bar.</p><div id="pbwrap"></div>`;
+    el.innerHTML = `<h1>Payloads</h1><p class="sub">Build one-liners and start handlers. LHOST defaults to the target bar.</p><div id="pbwrap"></div>`;
     const host = $("#pbwrap", el);
     const lh = targetVal() || "10.0.0.1";
     builderCard(host, { title: "Reverse shell", desc: "One-liner to run ON the target - copy it there.",
@@ -2113,7 +2113,7 @@ const sections = {
     const groups = Object.keys(EXPLOIT_GROUPS);
     const total = groups.reduce((a, g) => a + EXPLOIT_GROUPS[g].length, 0);
     el.innerHTML = `
-      <h1>Exploit &amp; vuln databases</h1>
+      <h1>Exploit databases</h1>
       <p class="sub">${total} exploit, CVE, attack-surface, and threat-intel sources. Type a term, then pick a source (opens in your browser). searchsploit runs a local Exploit-DB search. For authorized research only.</p>
       <div class="card" style="max-width:960px">
         <div class="run-bar"><input class="f mono" id="edbq" placeholder="term, CVE-2021-44228, product, IP, or query..." spellcheck="false" style="flex:1"><button class="btn ghost" id="edbss">searchsploit</button></div>
@@ -2420,7 +2420,7 @@ const sections = {
         <pre class="out" id="wlout" hidden style="margin-top:8px;max-height:320px;overflow:auto"></pre>
         <button class="btn ghost sm" id="wlcopy" hidden style="margin-top:8px">copy all</button>
       </div>
-      <div class="card" style="max-width:860px"><div class="lbl">Standard wordlists &amp; generators</div>${REFS.map(([l, c]) => `<div class="cs-line"><div class="cs-label">${esc(l)}</div><div class="cs-cmd"><code>${esc(c)}</code><button class="cs-copy" data-cp="${esc(c)}">copy</button></div></div>`).join("")}</div>`;
+      <div class="card" style="max-width:860px"><div class="lbl">Standard wordlists</div>${REFS.map(([l, c]) => `<div class="cs-line"><div class="cs-label">${esc(l)}</div><div class="cs-cmd"><code>${esc(c)}</code><button class="cs-copy" data-cp="${esc(c)}">copy</button></div></div>`).join("")}</div>`;
     function genWordlist(base) {
       base = base.trim(); if (!base) return [];
       const caps = new Set([base.toLowerCase(), base.toUpperCase(), base[0].toUpperCase() + base.slice(1).toLowerCase()]);
@@ -2805,7 +2805,7 @@ const sections = {
     const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (_) { return d; } };
     let findings = load(fKey, []);
     el.innerHTML = `
-      <h1>Notes &amp; findings</h1><p class="sub">Scoped to target <code>${esc(key)}</code>. Saved locally in this app.</p>
+      <h1>Notes</h1><p class="sub">Scoped to target <code>${esc(key)}</code>. Saved locally in this app.</p>
       <div class="card" style="max-width:820px">
         <label class="pb-f"><span>Scratch notes</span><textarea class="in" id="ntext" rows="6" spellcheck="false" placeholder="creds, paths, ideas..."></textarea></label>
         <div class="run-status ok" id="nsaved" style="visibility:hidden">saved</div>
@@ -3892,7 +3892,7 @@ const sections = {
         <div class="btns" style="margin-top:6px"><button class="btn sm" id="mcpsave">Save</button><button class="btn ghost sm" id="mcptest">Test connect</button><span class="run-status" id="mcpmsg"></span></div>
         <div id="mcplist" class="mono" style="margin-top:10px;font-size:.78rem;color:var(--txt-2);white-space:pre-wrap"></div>
       </div>
-      <div class="card"><div class="lbl">Autonomy &amp; scope</div>
+      <div class="card"><div class="lbl">Autonomy</div>
         <p class="muted" style="margin:0 0 10px;font-size:.82rem">The agent auto-runs against in-scope targets; out-of-scope hosts always ask first (guardrails). Optionally route planning/verification to a separate model.</p>
         <label class="pb-f" style="margin-bottom:8px"><span>In-scope hosts (comma-separated prefixes)</span><input class="in mono" id="scopein" spellcheck="false" placeholder="192.168.56.,127.0.0.1,localhost,10."></label>
         <div class="set-row"><span class="muted">Guardrails (confirm out-of-scope)</span><span class="seg" id="guardseg"><button data-v="1">On</button><button data-v="0">Off</button></span></div>
@@ -4097,7 +4097,7 @@ darknode api stop</code></pre>
         </ol>
       </div>
 
-      <div class="card" id="doc-sec"><div class="lbl">Security &amp; privacy</div>
+      <div class="card" id="doc-sec"><div class="lbl">Security</div>
         <ul class="muted" style="line-height:1.7;padding-left:20px">
           <li>Destructive shell commands are screened and blocked by default (<code>/guard</code>).</li>
           <li><code>/redact</code> masks secrets before any cloud send; <code>/offline</code> forces local-only.</li>
@@ -4107,7 +4107,7 @@ darknode api stop</code></pre>
         <p class="muted" style="font-size:.85rem">Authorized use only: use the recon, exploitation and lab tools solely on systems you own or have written permission to test.</p>
       </div>
 
-      <div class="card" id="doc-about"><div class="lbl">About &amp; legal</div>
+      <div class="card" id="doc-about"><div class="lbl">About</div>
         <p class="muted"><b>Darknode</b> v2.29 &mdash; the multi-engine AI coding &amp; security suite. Engines: Claude · local Ollama · OpenCode.</p>
         <details class="doc-d"><summary>Terms of Service</summary><p class="muted">Provided "as is", without warranty; all rights reserved. You are solely responsible for lawful, authorized use. To the maximum extent permitted by law the authors are not liable for any damages arising from use, including data loss or misuse. Cloud model usage is governed by your provider's terms.</p></details>
         <details class="doc-d"><summary>Privacy Policy</summary><p class="muted">The app runs on your machine; project state lives in <code>.nexus/</code>. We do not collect your code or prompts. Cloud engines send your prompt to the provider you chose (masked when <code>/redact</code> is on). No personal data is sold.</p></details>
@@ -4170,7 +4170,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit & vuln databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes & findings"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
