@@ -87,6 +87,7 @@ const DnSecrets = (() => {
     "s_anthropic_key", "s_api_key", "s_gh_token",
     "s_gmail_token", "s_gmail_refresh", "s_gmail_client_secret",
     "s_vt_key", "s_abuseipdb_key", "s_otx_key", "s_abusech_key",
+    "s_auto_pass",
   ];
   const isSecret = (k) => KEYS.indexOf(k) !== -1;
   const cache = Object.create(null);
@@ -293,26 +294,26 @@ const QCODE = (() => {
   for (let f = 1; f <= 12; f++) m["F" + f] = "f" + f;
   return m;
 })();
-// Pick the best default Ollama model: prefer ones that are both uncensored and good at tool-calling.
-// hermes3 (native tools + steerable) > dolphin3 > dolphin/abliterated/uncensored > llama3.1 > anything.
+// Pick the best default Ollama model: prefer capable, well-aligned models that are
+// strong at tool-calling. qwen2.5 / llama3.x (native tools + steerable) > mistral
+// family > hermes3 / command-r > anything that is actually installed.
 function pickDefaultModel(ms) {
   if (!ms || !ms.length) return "";
-  const pri = ["hermes3", "dolphin3", "dolphin-mixtral", "dolphin-llama3", "dolphin-mistral"];
+  const pri = ["qwen2.5", "llama3.3", "llama3.1", "llama3.2", "mistral-nemo", "mistral", "hermes3", "command-r"];
   for (const p of pri) { const hit = ms.find((m) => m.toLowerCase().startsWith(p)); if (hit) return hit; }
-  const fuzzy = ms.find((m) => /hermes|dolphin|abliterat|uncensored|wizard-?vicuna/i.test(m)); if (fuzzy) return fuzzy;
-  const llama = ms.find((m) => /^llama3\.1/i.test(m)); if (llama) return llama;
+  const fuzzy = ms.find((m) => /qwen|llama3|mistral|hermes|command-r|phi/i.test(m)); if (fuzzy) return fuzzy;
   return ms[0];
 }
 // A reasoning model (deepseek-r1, qwq, o1-style) thinks in <think> and collapses to empty args
 // under the agent's strict JSON tool schema — great for chat, unusable for the autonomous loop.
 const REASONING_RE = /(^|[/:._-])(r1|qwq|marco-o1|o1)([/:._-]|$)|deepseek-r1|reason/i;
 // Best model for DRIVING the autonomous agent: tool-capable, non-reasoning. Falls back to any
-// non-reasoning uncensored model, then llama3.1, then anything.
+// non-reasoning capable model, then llama3.1, then anything installed.
 function pickAgentModel(ms) {
   if (!ms || !ms.length) return "";
-  const pri = ["hermes3", "dolphin3", "dolphin-mixtral", "dolphin-llama3", "dolphin-mistral"];
-  for (const p of pri) { const hit = ms.find((m) => m.toLowerCase().startsWith(p)); if (hit) return hit; }
-  return ms.find((m) => !REASONING_RE.test(m) && /hermes|dolphin|uncensored|abliterat|wizard-?vicuna/i.test(m))
+  const pri = ["qwen2.5", "llama3.3", "llama3.1", "llama3.2", "mistral-nemo", "mistral", "hermes3", "command-r"];
+  for (const p of pri) { const hit = ms.find((m) => !REASONING_RE.test(m) && m.toLowerCase().startsWith(p)); if (hit) return hit; }
+  return ms.find((m) => !REASONING_RE.test(m) && /qwen|llama3|mistral|hermes|command-r|phi/i.test(m))
     || ms.find((m) => !REASONING_RE.test(m) && /^llama3\.1/i.test(m))
     || ms.find((m) => !REASONING_RE.test(m))
     || ms[0];
@@ -479,8 +480,6 @@ const TOOLS = [
   { id: "responder", name: "Responder", cat: "Post-ex", desc: "LLMNR / NBT-NS poisoner", install: "sudo apt install -y responder", run: "sudo responder -I eth0" },
   { id: "bloodhound", name: "BloodHound", cat: "Post-ex", desc: "AD attack-path mapping", install: "pipx install bloodhound-ce", run: "bloodhound-python -d DOMAIN -u USER -p PASS -c all -ns {target}" },
   // Web / exploitation
-  { id: "dalfox", name: "Dalfox", cat: "Web", desc: "Fast XSS scanner", install: "go install github.com/hahwul/dalfox/v2@latest", run: "dalfox url https://{target}" },
-  { id: "wpscan", name: "WPScan", cat: "Web", desc: "WordPress scanner", install: "sudo gem install wpscan", run: "wpscan --url https://{target}" },
   { id: "commix", name: "Commix", cat: "Exploitation", desc: "Command-injection exploiter", install: "sudo apt install -y commix", run: "commix -u 'https://{target}/?x=1'" },
   // Recon (modern ProjectDiscovery + classics)
   { id: "naabu", name: "naabu", cat: "Recon", desc: "Fast port scanner", install: "go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest", run: "naabu -host {target}" },
@@ -497,7 +496,6 @@ const TOOLS = [
   // Pivoting / post-ex
   { id: "chisel", name: "chisel", cat: "Post-ex", desc: "TCP/UDP tunnel over HTTP", install: "go install github.com/jpillora/chisel@latest", run: "chisel server -p 8080 --reverse" },
   { id: "ligolo", name: "Ligolo-ng", cat: "Post-ex", desc: "Reverse tunneling / pivoting", install: "go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest", run: "ligolo-ng-proxy -selfcert" },
-  { id: "medusa", name: "Medusa", cat: "Passwords", desc: "Parallel login brute-forcer", install: "sudo apt install -y medusa", run: "medusa -h {target} -u admin -P rockyou.txt -M ssh" },
   // Sniffing / network
   { id: "bettercap", name: "bettercap", cat: "Sniffing", desc: "MITM / network attack framework", install: "sudo apt install -y bettercap", run: "sudo bettercap -iface eth0" },
   { id: "proxychains", name: "proxychains", cat: "Network", desc: "Route tools through proxies", install: "sudo apt install -y proxychains4", run: "proxychains4 nmap -sT {target}" },
@@ -1133,7 +1131,7 @@ const sections = {
     // Reuses the same IPC surface the Assistant uses (shell, files, open apps, MCP).
     const hclip = (s, n) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n) + "\n...[truncated]" : s; };
     const hshq = (s) => "'" + String(s ?? "").replace(/'/g, "'\\''") + "'";
-    const perm = () => { try { return localStorage.getItem("s_perm") || "auto"; } catch (_) { return "auto"; } };
+    const perm = () => { try { return localStorage.getItem("s_perm") || "ask"; } catch (_) { return "ask"; } };
     const hcwd = { dir: "" };
     S.sysinfo().then((s) => { if (!hcwd.dir && s) hcwd.dir = s.home; }).catch(() => {});
     // ---- On-machine coding brain (window.NEXUS_CODE, vendored from the Nexus CLI engine) ----
@@ -1838,7 +1836,7 @@ const sections = {
     el.innerHTML = `
       <div class="dash-hero">
         <div class="dh-copy">
-          <div class="dh-eyebrow"><span class="dot-live"></span> SYSTEM ONLINE</div>
+          <div class="dh-eyebrow" id="dh-eyebrow"><span class="dot-live"></span> local system</div>
           <h1>Welcome to <span class="grad-text">Darknode</span></h1>
           <p class="sub">Everything here <b>runs on your machine</b> &mdash; real shells, real scans, local AI, and 70+ offline tools. The website can only show these; the app runs them for real.</p>
           <div class="dh-actions"><button class="btn" data-go="agent">Run the Agent</button><button class="btn ghost" data-go="runner">Open Terminal</button><button class="btn ghost" data-go="flagship">Offline toolbox</button></div>
@@ -1853,7 +1851,7 @@ const sections = {
         <h2>AI</h2>
         <div class="grid">
           ${qa("agent", "Autonomous Agent", "Give a goal; it uses 27 tools to do it")}
-          ${qa("ai", "Local AI chat", "Streaming chat with your Ollama models")}
+          ${qa("agent", "Local AI chat", "Chat with your local Ollama models — the Assistant runs them with tools")}
           ${qa("runner", "Terminal", "Real shells with live output")}
         </div>
         <h2>Recon</h2>
@@ -1880,13 +1878,20 @@ const sections = {
       </div>`;
     $("#qa-wrap", el).onclick = (e) => { const b = e.target.closest(".qa"); if (b) go(b.dataset.sec); };
     el.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
-    S.sysinfo().then((s) => {
+    Promise.all([S.sysinfo(), (S.ollama ? S.ollama("/api/tags").catch(() => null) : Promise.resolve(null))]).then(([s, or]) => {
+      const eb = $("#dh-eyebrow", el);
+      if (eb) eb.innerHTML = `<span class="dot-live"></span> ${esc(s.hostname || "host")} · ${esc(s.platform || "")}`;
+      // Real check: is the local Ollama runtime reachable, and how many models are pulled?
+      const models = (or && or.ok && or.data && Array.isArray(or.data.models)) ? or.data.models.length : null;
+      const ollamaLine = models != null
+        ? `<span class="c-ok" style="font-weight:700">OK</span> ollama &mdash; ${models} local model${models === 1 ? "" : "s"}`
+        : `<span class="c-mut" style="font-weight:700">--</span> ollama not reachable (start it with: ollama serve)`;
       const tb = $("#dh-term-body", el);
       if (tb) tb.innerHTML = `<span class="c-acc" aria-hidden="true">&#9670;</span> host    ${esc(s.hostname)}
 <span class="c-acc" aria-hidden="true">&#9670;</span> system  ${esc(s.platform)} / ${esc(s.arch)}
 <span class="c-acc" aria-hidden="true">&#9670;</span> cores   ${esc(String(s.cpus))}  ·  mem ${esc(s.mem)}
 <span class="c-acc" aria-hidden="true">&#9670;</span> engine  electron ${esc(s.electron || "?")} · node ${esc(s.node || "?")}
-<span class="c-ok" style="font-weight:700">OK</span> node-pty ready · <span class="c-ok" style="font-weight:700">OK</span> tools · <span class="c-ok" style="font-weight:700">OK</span> ollama proxy`;
+${ollamaLine}`;
       const gs = $("#dh-stats", el);
       if (gs) gs.innerHTML = `${stat(s.platform + " / " + s.arch, "system")}${stat(s.cpus + " cores", s.mem)}${stat(esc(s.hostname), "host")}`;
     });
@@ -2015,7 +2020,7 @@ const sections = {
   },
 
   async lab(el) {
-    const fg = (L) => "docker run --rm -it -p " + L.port + ":" + L.cport + " " + L.image;
+    const fg = (L) => "docker run --rm -it -p 127.0.0.1:" + L.port + ":" + L.cport + " " + L.image;
     el.innerHTML = `
       <h1>Practice targets</h1>
       <p class="sub">Deliberately vulnerable apps to practice on &mdash; launch one locally with Docker, then point Darknode's tools and the Agent at it. Use only on systems you own.</p>
@@ -2219,11 +2224,11 @@ const sections = {
     };
     $("#vmList", el).onclick = async (e) => {
       const start = e.target.closest("[data-start]"), con = e.target.closest("[data-console]"), stop = e.target.closest("[data-stop]"), del = e.target.closest("[data-del]"), iso = e.target.closest("[data-iso]");
-      if (start) { const b = start; b.textContent = "starting..."; b.disabled = true; const r = await S.vmStart(b.dataset.start); if (!r.ok) { alert("Start failed: " + r.error); b.textContent = "Start"; b.disabled = false; return; } await loadList(); openConsole(b.dataset.start); }
+      if (start) { const b = start; b.textContent = "starting..."; b.disabled = true; const r = await S.vmStart(b.dataset.start); if (!r.ok) { _toast("Start failed: " + r.error); b.textContent = "Start"; b.disabled = false; return; } await loadList(); openConsole(b.dataset.start); }
       else if (con) openConsole(con.dataset.console);
       else if (stop) { await S.vmStop(stop.dataset.stop); if (curConsoleId === stop.dataset.stop) stopVmConsole(); setTimeout(loadList, 1500); }
       else if (iso) { const f = await S.openFile([{ name: "ISO images", extensions: ["iso", "img"] }]); if (f) { await S.vmUpdate(iso.dataset.iso, { iso: f }); loadList(); } }
-      else if (del) { const v = (await S.vmList()).find((x) => x.id === del.dataset.del); if (!confirm("Delete " + (v ? v.name : "this VM") + "? This also deletes its disk.")) return; await S.vmDelete(del.dataset.del, true); if (curConsoleId === del.dataset.del) stopVmConsole(); loadList(); }
+      else if (del) { const v = (await S.vmList()).find((x) => x.id === del.dataset.del); if (!(await dnConfirm("Delete " + (v ? v.name : "this VM") + "? This also deletes its disk.", { confirmText: "Delete", danger: true }))) return; await S.vmDelete(del.dataset.del, true); if (curConsoleId === del.dataset.del) stopVmConsole(); loadList(); }
     };
 
     // ---- in-app console (screendump refresh + keyboard/mouse over QMP) ----
@@ -3037,10 +3042,10 @@ const sections = {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
     feed.addEventListener("click", (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const c = b.parentElement.querySelector("code"); navigator.clipboard?.writeText(c.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1000); }); });
-    const lsGet = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch (_) { return d; } };
-    const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+    const lsGet = (k, d) => { try { if (DnSecrets.isSecret(k)) return DnSecrets.get(k) || d; return localStorage.getItem(k) ?? d; } catch (_) { return d; } };
+    const lsSet = (k, v) => { try { if (DnSecrets.isSecret(k)) { DnSecrets.set(k, v); return; } localStorage.setItem(k, v); } catch (_) {} };
     // Permissions toggle: Auto = run risky tools unattended; Ask = confirm each risky tool first.
-    const perm = () => lsGet("s_perm", "auto");
+    const perm = () => lsGet("s_perm", "ask");
     // B6: scope guardrails — auto-run in-scope, but require approval for out-of-scope hosts even in Auto mode.
     const scopeList = () => lsGet("s_scope", "192.168.56.,127.0.0.1,localhost,10.").split(",").map((x) => x.trim()).filter(Boolean);
     const guardOn = () => lsGet("s_guard", "1") === "1";
@@ -3191,7 +3196,7 @@ const sections = {
           const key = String(a.name || "").toLowerCase();
           const t = PRACTICE_TARGETS.find((x) => x.id === key || x.name.toLowerCase() === key);
           if (!t) return { error: "unknown target; choose one of: " + PRACTICE_TARGETS.map((x) => x.id).join(", ") };
-          const r = await S.agentExec("docker run -d --rm -p " + t.port + ":" + t.cport + " " + t.image, cwd.dir, 180000);
+          const r = await S.agentExec("docker run -d --rm -p 127.0.0.1:" + t.port + ":" + t.cport + " " + t.image, cwd.dir, 180000);
           if (!r.ok) return { error: r.error };
           if (r.code !== 0) return { error: "docker failed (is Docker installed and running?): " + clip(r.output, 500) };
           return { ok: true, target: t.id, url: t.url, creds: t.creds, container: (r.output || "").trim().slice(0, 12), note: t.setup || "" };
@@ -3748,115 +3753,6 @@ const sections = {
     $("#aggoal", el).onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
   },
 
-  async ai(el) { return this.agent(el); /* unified: Local AI folded into the autonomous Assistant */
-    el.innerHTML = `
-      <h1>Local AI</h1>
-      <p class="sub">Unrestricted chat with your local Ollama models &mdash; private, built for security research and coding. With <b>Autonomous</b> on, it runs the commands it produces and works from their output until the task is done.</p>
-      <div class="run-bar"><select class="f" id="model" style="flex:1"><option>loading models...</option></select><label class="muted" style="display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" id="aiauto" style="width:15px;height:15px;accent-color:var(--acc)"> Autonomous</label><button class="btn ghost" id="aisys">System prompt</button><button class="btn ghost" id="refresh">Refresh</button></div>
-      <div class="chat" id="chat"></div>
-      <div class="ref-chips" id="aipresets"></div>
-      <div id="aiThumbs" class="ai-thumbs"></div>
-      <div class="run-bar"><textarea class="f" id="msg" rows="2" placeholder="Ask anything, or attach/paste a screenshot to read its text. (Enter to send)" style="flex:1;resize:vertical"></textarea><button class="btn ghost" id="aiimg" title="Attach image">Image</button><button class="btn" id="send">Send</button></div>
-      <input type="file" id="aifile" accept="image/*" hidden>
-      <div class="muted" id="aist"></div>`;
-    const model = $("#model", el), chat = $("#chat", el), st = $("#aist", el);
-    const SYS_KEY = "s_ai_sys";
-    const DEFAULT_SYS = "You are Darknode AI, a security researcher and senior software engineer embedded in the operator's private security console, used on systems the operator owns or is explicitly authorized to test. Give precise, practical, copy-pasteable commands and working code for legitimate authorized security work, with concise technical depth rather than unnecessary caveats. Operate within the operator's authorized scope: if a request appears to target systems outside that scope, or to be for unlawful or unauthorized use, decline and explain why rather than proceeding. Do NOT assume any specific host, account, or credential exists; base your work on the target the operator provides and on what recon actually reveals. When privileged work is needed, use sudo if it is available on this host (for example 'sudo nmap -sS -O'); if it is not available, say so and give a non-privileged alternative. NEVER run destructive commands against the operator's own host - keep any intrusive actions on the authorized, in-scope targets, not this machine.";
-    const history = [{ role: "system", content: localStorage.getItem(SYS_KEY) || DEFAULT_SYS }];
-    const PRESETS = [["Explain code", "Explain what this code does, step by step:\n\n"], ["Find vulns", "Review this code for security vulnerabilities and list concrete issues with fixes:\n\n"], ["Write PoC", "Write a proof-of-concept exploit for this (authorized testing):\n\n"], ["To Python", "Convert this to clean, idiomatic Python:\n\n"], ["One-liner", "Give me a shell one-liner to: "]];
-    $("#aipresets", el).innerHTML = PRESETS.map((p, i) => `<button class="btn ghost sm" data-p="${i}">${esc(p[0])}</button>`).join("");
-    $("#aipresets", el).onclick = (e) => { const b = e.target.closest("[data-p]"); if (!b) return; const box = $("#msg", el); box.value = PRESETS[+b.dataset.p][1] + box.value; box.focus(); };
-    $("#aisys", el).onclick = () => { const v = window.prompt("System prompt - controls how the AI behaves:", localStorage.getItem(SYS_KEY) || DEFAULT_SYS); if (v !== null) { try { localStorage.setItem(SYS_KEY, v); } catch (_) {} history[0] = { role: "system", content: v }; st.textContent = "System prompt updated."; } };
-    async function loadModels() {
-      const r = await S.ollama("/api/tags");
-      if (!r.ok) { model.innerHTML = "<option>Ollama not running (ollama serve)</option>"; st.textContent = r.error || ""; return; }
-      const ms = (r.data.models || []).map((m) => m.name);
-      model.innerHTML = ms.length ? ms.map((m) => `<option>${esc(m)}</option>`).join("") : "<option>no models - ollama pull llama3.1</option>";
-      let saved; try { saved = localStorage.getItem("s_model"); } catch (_) {} if (saved && ms.includes(saved)) model.value = saved; else { const pref = pickDefaultModel(ms); if (pref) model.value = pref; }
-    }
-    model.onchange = () => { try { localStorage.setItem("s_model", model.value); } catch (_) {} };
-    $("#refresh", el).onclick = loadModels;
-
-    // ---- image attach / paste (vision) ----
-    let pending = []; // base64 strings (no data: prefix)
-    const drawThumbs = () => { $("#aiThumbs", el).innerHTML = pending.map((b, i) => `<span class="ai-thumb"><img alt="attachment ${i + 1}" src="data:image/png;base64,${b}"><button data-rm="${i}" title="remove" aria-label="remove attachment ${i + 1}">&times;</button></span>`).join(""); };
-    const addImage = (file) => { if (!file || !file.type.startsWith("image/")) return; const rd = new FileReader(); rd.onload = () => { pending.push(String(rd.result).split(",")[1]); drawThumbs(); }; rd.readAsDataURL(file); };
-    $("#aiimg", el).onclick = () => $("#aifile", el).click();
-    $("#aifile", el).onchange = (e) => { [...e.target.files].forEach(addImage); e.target.value = ""; };
-    $("#aiThumbs", el).onclick = (e) => { const b = e.target.closest("[data-rm]"); if (b) { pending.splice(+b.dataset.rm, 1); drawThumbs(); } };
-    $("#msg", el).addEventListener("paste", (e) => { for (const it of e.clipboardData.items) if (it.type.startsWith("image/")) addImage(it.getAsFile()); });
-
-    let busy = false, sseq = 0, chatCwd = "";
-    S.sysinfo().then((s) => { chatCwd = s.home; }).catch(() => {});
-    const autoRun = $("#aiauto", el);
-    try { autoRun.checked = (localStorage.getItem("s_ai_auto") ?? "1") === "1"; } catch (_) { autoRun.checked = true; }
-    autoRun.onchange = () => { try { localStorage.setItem("s_ai_auto", autoRun.checked ? "1" : "0"); } catch (_) {} };
-    function addExecBlock(cmd) {
-      const first = String(cmd).split("\n")[0]; const d = document.createElement("div"); d.className = "msg tool";
-      d.innerHTML = `<div class="exec-h mono">$ ${esc(first.length > 200 ? first.slice(0, 200) + " …" : first)}</div><pre class="out">running…</pre>`;
-      chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d.querySelector(".out");
-    }
-    // Reasoning models (deepseek-r1) wrap their chain-of-thought in <think>…</think>.
-    // Split it out so the chat shows a clean answer with the reasoning tucked into a
-    // collapsible block, and downstream (history, command extraction) sees only the answer.
-    function splitThink(s) {
-      s = String(s || ""); let think = "";
-      s = s.replace(/<think>([\s\S]*?)<\/think>/gi, (_, t) => { think += t; return ""; });
-      const open = s.indexOf("<think>");
-      if (open >= 0) { think += s.slice(open + 7); s = s.slice(0, open); }
-      return { think: think.trim(), answer: s.trim() };
-    }
-    function renderReply(out, raw) {
-      const { think, answer } = splitThink(raw);
-      out.innerHTML = (think ? `<details class="ai-think"><summary class="muted">reasoning</summary><div class="muted">${mdHtml(think)}</div></details>` : "") + mdHtml(answer);
-    }
-    async function streamReply() {
-      const out = document.createElement("div"); out.className = "msg ai ag-live"; out.textContent = ""; chat.appendChild(out); chat.scrollTop = chat.scrollHeight;
-      let acc = ""; const sid = "ai" + (++sseq);
-      _ollamaTokenCb = (d) => { if (d.id !== sid) return; acc += d.chunk; renderReply(out, acc); chat.scrollTop = chat.scrollHeight; };
-      const r = await AI.stream(sid, { model: model.value, messages: history });
-      _ollamaTokenCb = null; out.classList.remove("ag-live");
-      if (!r.ok) { out.className = "msg ai err"; out.textContent = r.error || (AI.label() + " error"); return null; }
-      try { ledgerFrom(r, model.value); } catch (_) {}
-      const reply = (r.message && r.message.content) || acc || "(no reply)";
-      const answer = splitThink(reply).answer || reply;
-      history.push({ role: "assistant", content: answer }); renderReply(out, reply); chat.scrollTop = chat.scrollHeight; return answer;
-    }
-    async function send() {
-      if (busy) return;
-      const box = $("#msg", el), text = box.value.trim(); const imgs = pending.slice();
-      if (!text && !imgs.length) return; box.value = "";
-      busy = true; $("#send", el).disabled = true;
-      const um = { role: "user", content: text || "Read and transcribe any text in this image, then help with it." };
-      if (imgs.length) um.images = imgs;
-      history.push(um);
-      const you = document.createElement("div"); you.className = "msg you";
-      you.innerHTML = (imgs.map((b) => `<img class="msg-img" alt="attached image" src="data:image/png;base64,${b}">`).join("")) + esc(text);
-      chat.appendChild(you); pending = []; drawThumbs();
-      chat.scrollTop = chat.scrollHeight; st.textContent = imgs.length ? "reading image (needs a vision model like minicpm-v or llava)…" : "thinking…";
-      let reply = await streamReply(); st.textContent = "";
-      // Autonomous mode: run any command the model produced, feed the output back, and keep going.
-      if (reply != null && autoRun.checked && !imgs.length) {
-        for (let i = 0; i < 8; i++) {
-          const cmd = commandFromText(reply); if (!cmd) break;
-          const outEl = addExecBlock(cmd); st.textContent = "running command…";
-          let res; try { res = await S.agentExec(cmd, chatCwd || undefined, undefined, (localStorage.getItem("s_auto_pass") || "")); } catch (e) { res = { ok: false, error: e.message }; }
-          const body = res && res.ok ? (res.output || "(no output)") : ("error: " + ((res && res.error) || "failed"));
-          const shown = body.length > 6000 ? body.slice(0, 6000) + "\n…[truncated]" : body;
-          outEl.textContent = shown; outEl.className = "out" + (res && res.ok ? "" : " ag-err"); chat.scrollTop = chat.scrollHeight;
-          history.push({ role: "user", content: "OUTPUT of the command:\n" + shown + "\n\nContinue toward the goal: run the next command inside a single ```bash code block, or reply DONE with a short summary if the task is complete." });
-          st.textContent = "thinking…"; reply = await streamReply(); if (reply == null) break;
-          if (!commandFromText(reply)) break;
-        }
-      }
-      st.textContent = ""; busy = false; $("#send", el).disabled = false; box.focus();
-    }
-    $("#send", el).onclick = send;
-    $("#msg", el).onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
-    chat.addEventListener("click", (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const c = b.parentElement.querySelector("code"); navigator.clipboard?.writeText(c.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1000); }); });
-    loadModels();
-  },
-
   settings(el) {
     const cur = document.documentElement.getAttribute("data-theme") || "dark";
     el.innerHTML = `
@@ -3902,13 +3798,13 @@ const sections = {
         <div class="btns" style="margin-top:10px"><button class="btn sm" id="autosave">Save</button><span class="run-status" id="automsg"></span></div>
       </div>
       <div class="card"><div class="lbl">About</div>
-        <div class="set-row"><span class="muted">Version</span><span class="mono">2.29.0</span></div>
+        <div class="set-row"><span class="muted">Version</span><span class="mono" id="ab-version">…</span></div>
         <div class="set-row"><span class="muted">License</span><span>Proprietary</span></div>
         <div class="set-row"><span class="muted">Engine</span><span class="mono" id="ab-engine">Electron</span></div>
         <p class="muted" style="margin:12px 0 0">Darknode desktop console &mdash; tools, live terminals, a code workbench, a native port scanner, and local AI. Built for authorized security testing.</p>
         <div class="btns" style="margin-top:12px"><button class="btn ghost sm" id="ab-site">Open website</button><button class="btn ghost sm" id="ab-docs">Documentation</button></div>
       </div>`;
-    S.sysinfo().then((s) => { const e = $("#ab-engine", el); if (e) e.textContent = "Electron " + (s.electron || "?") + " · Node " + (s.node || "?"); });
+    S.sysinfo().then((s) => { const e = $("#ab-engine", el); if (e) e.textContent = "Electron " + (s.electron || "?") + " · Node " + (s.node || "?"); const v = $("#ab-version", el); if (v) v.textContent = s.version || "unknown"; });
     { const b = $("#ab-site", el); if (b) b.onclick = () => S.openExternal("https://darknode.ai"); }
     { const b = $("#ab-docs", el); if (b) b.onclick = () => S.openExternal("https://darknode-a61064a5.mintlify.app"); }
     $("#ac", el).onclick = (e) => { const b = e.target.closest(".swatch"); if (b) applyAccent(b.dataset.c); };
@@ -3967,9 +3863,9 @@ const sections = {
     { const sc = $("#scopein", el); if (sc) sc.value = localStorage.getItem("s_scope") || ""; }
     { const pl = $("#plannerin", el); if (pl) pl.value = localStorage.getItem("s_planner_model") || ""; }
     { const nc = $("#nctxin", el); if (nc) nc.value = localStorage.getItem("s_num_ctx") || ""; }
-    { const ap = $("#autopass", el); if (ap) ap.value = localStorage.getItem("s_auto_pass") || ""; }
+    { const ap = $("#autopass", el); if (ap) ap.value = DnSecrets.get("s_auto_pass") || ""; }
     { const gs = $("#guardseg", el); if (gs) { const on = (localStorage.getItem("s_guard") ?? "1") === "1"; gs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", (b.dataset.v === "1") === on)); gs.onclick = (e) => { const b = e.target.closest("button[data-v]"); if (!b) return; try { localStorage.setItem("s_guard", b.dataset.v); } catch (_) {} gs.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); }; } }
-    { const b = $("#autosave", el); if (b) b.onclick = () => { try { localStorage.setItem("s_scope", $("#scopein", el).value.trim()); localStorage.setItem("s_planner_model", $("#plannerin", el).value.trim()); localStorage.setItem("s_auto_pass", $("#autopass", el).value); const nv = parseInt($("#nctxin", el).value.trim(), 10); if (nv >= 2048 && nv <= 131072) localStorage.setItem("s_num_ctx", String(nv)); else if (!$("#nctxin", el).value.trim()) localStorage.removeItem("s_num_ctx"); const m = $("#automsg", el); m.className = "run-status ok"; m.textContent = "saved (reopen Assistant to apply)"; setTimeout(() => (m.textContent = ""), 2500); } catch (_) {} }; }
+    { const b = $("#autosave", el); if (b) b.onclick = () => { try { localStorage.setItem("s_scope", $("#scopein", el).value.trim()); localStorage.setItem("s_planner_model", $("#plannerin", el).value.trim()); DnSecrets.set("s_auto_pass", $("#autopass", el).value); const nv = parseInt($("#nctxin", el).value.trim(), 10); if (nv >= 2048 && nv <= 131072) localStorage.setItem("s_num_ctx", String(nv)); else if (!$("#nctxin", el).value.trim()) localStorage.removeItem("s_num_ctx"); const m = $("#automsg", el); m.className = "run-status ok"; m.textContent = "saved (reopen Assistant to apply)"; setTimeout(() => (m.textContent = ""), 2500); } catch (_) {} }; }
     { const b = $("#mcptest", el); if (b) b.onclick = async () => {
         let a; try { a = parseMcp(); } catch (e) { return mcpMsg("bad", "invalid JSON: " + e.message); }
         if (!S.mcpConnect) return mcpMsg("bad", "MCP unavailable in this build");
@@ -4056,10 +3952,21 @@ darknode api stop</code></pre>
     if (startBtn) startBtn.onclick = async () => {
       const msg = $("#apiStartMsg", el);
       if (msg) msg.textContent = "Starting...";
+      startBtn.disabled = true;
       try {
-        await S.exec("darknode", ["api", "start", "--port", "8080"]);
-        if (msg) msg.textContent = "API server running on port 8080";
+        const w = await S.which("darknode");
+        if (!(w && w.found)) { if (msg) msg.textContent = "The 'darknode' CLI is not installed or not on PATH."; return; }
+        // Launch detached, then verify the process is actually still alive and the
+        // port is bound before reporting success — never claim it started blindly.
+        const cmd = "setsid nohup darknode api start --port 8080 >/tmp/dn-api.log 2>&1 & p=$!; sleep 1.6; " +
+          "if kill -0 \"$p\" 2>/dev/null; then echo RUNNING; else echo EXITED; fi; echo '---'; tail -c 600 /tmp/dn-api.log";
+        const r = await S.agentExec(cmd, undefined, 8000);
+        if (!r.ok) { if (msg) msg.textContent = "Error: " + (r.error || "failed to launch"); return; }
+        const out = (r.output || "").trim();
+        if (/RUNNING/.test(out)) { if (msg) msg.textContent = "API server running on port 8080"; }
+        else { const log = out.replace(/^[\s\S]*?---\s*/, "").trim(); if (msg) msg.textContent = "Failed to start — " + (log || "the process exited immediately"); }
       } catch (e) { if (msg) msg.textContent = "Error: " + (e.message || e); }
+      finally { startBtn.disabled = false; }
     };
     const webBtn = $("#apiWebBtn", el);
     if (webBtn) webBtn.onclick = () => { try { S.openExternal("https://darknode.ai/#api"); } catch (_) {} };
@@ -4134,7 +4041,7 @@ const SECTION_HUE = {
   vms: "#38bdf8", cloud: "#38bdf8",
   http: "#2ee6a6", cve: "#2ee6a6", encode: "#2ee6a6", forensics: "#2ee6a6", refs: "#2ee6a6", wordlists: "#2ee6a6", loot: "#2ee6a6", notes: "#2ee6a6",
   arsenal: "#a78bfa", training: "#a78bfa",
-  agent: "#c26cff", ai: "#c26cff", home: "#c26cff",
+  agent: "#c26cff", home: "#c26cff",
 };
 function labelOfSec(s) { const b = document.querySelector('.nav-item[data-sec="' + s + '"] span'); return b ? b.textContent.trim() : s.charAt(0).toUpperCase() + s.slice(1); }
 function renderCrumbs(sec) {
@@ -4151,7 +4058,6 @@ function go(sec, arg) {
   curSec = sec; renderCrumbs(sec);
   { const sb = document.getElementById("sb-sec"); if (sb) sb.textContent = labelOfSec(sec); }
   document.documentElement.style.setProperty("--sec", SECTION_HUE[sec] || "var(--acc)");
-  page.classList.toggle("ide-mode", sec === "code");
   page.classList.toggle("dai-mode", sec === "home");
   document.querySelectorAll(".nav-item").forEach((x) => x.classList.toggle("active", x.dataset.sec === sec));
   main.scrollTop = 0;
@@ -4170,7 +4076,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes"], ["agent", "Agent (autonomous AI)"], ["ai", "Local AI"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes"], ["agent", "Agent (autonomous AI)"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
@@ -4249,6 +4155,25 @@ S.sysinfo().then((s) => { $("#side-foot").textContent = s.hostname + " · " + s.
 
 // ---- save the exact frame (Ctrl+S): section + typed text, restored on next launch ----
 const _toast = (msg, ms) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in")); setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, ms || 2400); };
+// Promise-based confirm modal (replaces native confirm()). Resolves true/false.
+function dnConfirm(message, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const ov = document.createElement("div"); ov.className = "dn-modal-overlay";
+    ov.innerHTML = `<div class="dn-modal" role="dialog" aria-modal="true"><div class="dn-modal-body"></div><div class="dn-modal-btns"><button class="btn sm ghost" data-no></button><button class="btn sm" data-yes></button></div></div>`;
+    ov.querySelector(".dn-modal-body").textContent = message;
+    const yes = ov.querySelector("[data-yes]"), no = ov.querySelector("[data-no]");
+    yes.textContent = opts.confirmText || "Confirm"; no.textContent = opts.cancelText || "Cancel";
+    if (opts.danger) yes.classList.add("danger");
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; document.removeEventListener("keydown", onKey); ov.classList.remove("in"); setTimeout(() => ov.remove(), 200); resolve(v); };
+    const onKey = (e) => { if (e.key === "Escape") finish(false); else if (e.key === "Enter") finish(true); };
+    yes.onclick = () => finish(true); no.onclick = () => finish(false);
+    ov.onclick = (e) => { if (e.target === ov) finish(false); };
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(ov); requestAnimationFrame(() => { ov.classList.add("in"); try { yes.focus(); } catch (_) {} });
+  });
+}
 function saveFrame() {
   const fields = {};
   page.querySelectorAll("input,textarea,select").forEach((el) => { if (el.id && el.type !== "password" && el.type !== "file" && el.value) fields[el.id] = el.value; });
