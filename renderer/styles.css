@@ -414,6 +414,11 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .cve-id{color:var(--acc);font-weight:700;font-family:ui-monospace,monospace;cursor:pointer}
 .cve-id:hover{text-decoration:underline}
 .cve-desc{font-size:.82rem;line-height:1.5}
+.cve-kev{display:inline-flex;align-items:center;font-size:.58rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 45%,transparent)}
+.cve-vec{margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+.cve-metrics{display:flex;flex-wrap:wrap;gap:5px}
+.cve-metric{font-size:.68rem;padding:2px 7px;border-radius:5px;background:var(--panel-2,rgba(127,127,127,.08));border:1px solid var(--line);white-space:nowrap}
+.cve-metric b{color:var(--acc);font-weight:800}
 
 /* ============================================================
    Reference section + AI markdown + polish (v1.5)

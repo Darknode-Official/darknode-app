@@ -381,7 +381,7 @@ const scanRoute = { hit: null, progress: null, done: null };
 S.onScanHit((d) => scanRoute.hit && scanRoute.hit(d));
 S.onScanProgress((d) => scanRoute.progress && scanRoute.progress(d));
 S.onScanDone((d) => scanRoute.done && scanRoute.done(d));
-const SERVICES = { 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 80: "http", 110: "pop3", 111: "rpcbind", 135: "msrpc", 139: "netbios", 143: "imap", 161: "snmp", 389: "ldap", 443: "https", 445: "smb", 465: "smtps", 587: "smtp", 636: "ldaps", 993: "imaps", 995: "pop3s", 1080: "socks", 1433: "mssql", 1521: "oracle", 2049: "nfs", 2375: "docker", 3306: "mysql", 3389: "rdp", 4444: "metasploit", 5432: "postgres", 5601: "kibana", 5900: "vnc", 5985: "winrm", 6379: "redis", 7001: "weblogic", 8000: "http-alt", 8080: "http-proxy", 8443: "https-alt", 8888: "http-alt", 9000: "http-alt", 9200: "elastic", 11211: "memcached", 27017: "mongodb" };
+const SERVICES = { 7: "echo", 19: "chargen", 20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 37: "time", 42: "wins", 43: "whois", 49: "tacacs", 53: "dns", 67: "dhcp", 69: "tftp", 70: "gopher", 79: "finger", 80: "http", 81: "http-alt", 88: "kerberos", 102: "ms-wbt/iso-tsap", 110: "pop3", 111: "rpcbind", 113: "ident", 119: "nntp", 123: "ntp", 135: "msrpc", 137: "netbios-ns", 138: "netbios-dgm", 139: "netbios-ssn", 143: "imap", 161: "snmp", 162: "snmp-trap", 179: "bgp", 194: "irc", 199: "smux", 201: "appletalk", 264: "bgmp", 389: "ldap", 427: "svrloc", 443: "https", 444: "snpp", 445: "smb", 465: "smtps", 500: "isakmp", 502: "modbus", 512: "exec", 513: "rlogin", 514: "syslog/shell", 515: "printer", 520: "rip", 523: "db2", 540: "uucp", 548: "afp", 554: "rtsp", 587: "submission", 593: "ms-rpc-http", 623: "ipmi", 631: "ipp", 636: "ldaps", 646: "ldp", 666: "doom", 873: "rsync", 902: "vmware", 989: "ftps-data", 990: "ftps", 993: "imaps", 995: "pop3s", 1080: "socks", 1099: "java-rmi", 1194: "openvpn", 1433: "mssql", 1434: "mssql-m", 1521: "oracle", 1604: "citrix", 1723: "pptp", 1883: "mqtt", 1900: "upnp", 2049: "nfs", 2082: "cpanel", 2083: "cpanel-ssl", 2086: "whm", 2087: "whm-ssl", 2095: "webmail", 2121: "ftp-alt", 2181: "zookeeper", 2222: "ssh-alt", 2375: "docker", 2376: "docker-tls", 2379: "etcd", 2404: "iec-104", 2483: "oracle-db", 2484: "oracle-db-ssl", 3000: "node/grafana", 3128: "squid-proxy", 3268: "globalcat-ldap", 3269: "globalcat-ldaps", 3306: "mysql", 3389: "rdp", 3478: "stun", 3632: "distcc", 3690: "svn", 4000: "icq", 4040: "spark-ui", 4369: "epmd", 4444: "metasploit", 4505: "saltstack", 4506: "saltstack", 4786: "cisco-smi", 4848: "glassfish", 5000: "upnp/flask", 5001: "commplex", 5006: "wsm", 5009: "airport-admin", 5038: "asterisk-ami", 5060: "sip", 5061: "sips", 5222: "xmpp", 5353: "mdns", 5355: "llmnr", 5432: "postgres", 5555: "adb/hplaser", 5601: "kibana", 5631: "pcanywhere", 5672: "amqp", 5900: "vnc", 5938: "teamviewer", 5984: "couchdb", 5985: "winrm", 5986: "winrm-ssl", 6000: "x11", 6379: "redis", 6443: "kubernetes-api", 6514: "syslog-tls", 6660: "irc", 6667: "irc", 7000: "cassandra/afs", 7001: "weblogic", 7077: "spark", 7199: "cassandra-jmx", 7474: "neo4j", 7547: "cwmp/tr069", 7777: "oracle-ebs", 8000: "http-alt", 8008: "http-alt", 8009: "ajp13", 8020: "hadoop", 8042: "hadoop-nm", 8080: "http-proxy", 8081: "http-alt", 8086: "influxdb", 8088: "hadoop/radan", 8089: "splunkd", 8090: "http-alt", 8091: "couchbase", 8140: "puppet", 8161: "activemq", 8200: "vault", 8333: "bitcoin", 8443: "https-alt", 8500: "consul", 8530: "wsus", 8531: "wsus-ssl", 8686: "jmx", 8880: "websphere", 8888: "http-alt", 9000: "http-alt/sonar", 9042: "cassandra-cql", 9090: "prometheus", 9092: "kafka", 9100: "jetdirect", 9200: "elastic", 9300: "elastic-node", 9418: "git", 9443: "https-alt", 9999: "abyss", 10000: "webmin", 10250: "kubelet", 11211: "memcached", 15672: "rabbitmq-mgmt", 16379: "redis-cluster", 27017: "mongodb", 27018: "mongodb", 27019: "mongodb-cfg", 28017: "mongodb-web", 50070: "hadoop-nn", 61616: "activemq" };
 const TOP_PORTS = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 161, 389, 443, 445, 465, 587, 636, 993, 995, 1025, 1080, 1433, 1521, 1723, 2049, 2121, 2375, 3000, 3128, 3306, 3389, 4444, 5000, 5432, 5601, 5900, 5985, 6379, 7001, 8000, 8008, 8080, 8081, 8443, 8888, 9000, 9090, 9200, 9300, 10000, 11211, 27017, 27018];
 const rangePorts = (a, b) => { const out = []; for (let p = a; p <= b; p++) out.push(p); return out; };
 // ---- content fuzzer router + built-in wordlist ----
@@ -2426,6 +2426,7 @@ ${ollamaLine}`;
         <button class="btn ghost sm" id="wlcopy" hidden style="margin-top:8px">copy all</button>
       </div>
       <div class="card" style="max-width:860px"><div class="lbl">Standard wordlists</div>${REFS.map(([l, c]) => `<div class="cs-line"><div class="cs-label">${esc(l)}</div><div class="cs-cmd"><code>${esc(c)}</code><button class="cs-copy" data-cp="${esc(c)}">copy</button></div></div>`).join("")}</div>`;
+    const WL_CAP = 400;
     function genWordlist(base) {
       base = base.trim(); if (!base) return [];
       const caps = new Set([base.toLowerCase(), base.toUpperCase(), base[0].toUpperCase() + base.slice(1).toLowerCase()]);
@@ -2433,13 +2434,17 @@ ${ollamaLine}`;
       const years = ["", "1", "12", "123", "1234", "!", "@", "#", "2023", "2024", "2025", "2026", "01", "007", "69"];
       const out = new Set();
       for (const c of caps) { out.add(c); for (const y of years) { out.add(c + y); out.add(c + y + "!"); } out.add(leet(c)); out.add(leet(c) + "!"); }
-      return [...out].slice(0, 400);
+      return [...out];
     }
     const stat = $("#wlstat", el), out = $("#wlout", el), copy = $("#wlcopy", el);
     function run() {
-      const list = genWordlist($("#wlbase", el).value);
-      if (!list.length) { stat.textContent = "enter a base word"; out.hidden = true; copy.hidden = true; return; }
-      stat.className = "run-status ok"; stat.textContent = list.length + " candidates generated";
+      const all = genWordlist($("#wlbase", el).value);
+      if (!all.length) { stat.textContent = "enter a base word"; out.hidden = true; copy.hidden = true; return; }
+      const list = all.slice(0, WL_CAP);
+      stat.className = "run-status ok";
+      stat.textContent = all.length > WL_CAP
+        ? `showing ${list.length} of ${all.length} candidates (capped at ${WL_CAP})`
+        : `${list.length} candidate${list.length === 1 ? "" : "s"} generated`;
       out.hidden = false; out.textContent = list.join("\n"); copy.hidden = false;
     }
     $("#wlgo", el).onclick = run;
@@ -2468,64 +2473,99 @@ ${ollamaLine}`;
       <h1>Port scanner</h1><p class="sub">Native TCP scanner &mdash; no external tools needed. Scans the target and grabs banners live.</p>
       <div class="card" style="max-width:860px">
         <div class="run-bar">
-          <input class="f mono" id="shost" placeholder="host / IP" value="${esc(targetVal())}" style="flex:2">
+          <input class="f mono" id="shost" placeholder="host / IP / CIDR / list" value="${esc(targetVal())}" style="flex:2">
           <select class="f" id="spreset" style="flex:1">
             <option value="top">Top ~55 ports</option>
             <option value="1-1024">Well-known (1-1024)</option>
             <option value="1-10000">1-10000</option>
-            <option value="custom">Custom range</option>
+            <option value="custom">Custom ports</option>
           </select>
-          <input class="f mono" id="scustom" placeholder="1-65535" style="max-width:130px;display:none">
+          <input class="f mono" id="scustom" placeholder="22,80,443 or 1-1024" style="max-width:150px;display:none">
           <button class="btn" id="sgo">Scan</button>
           <button class="btn ghost" id="sstop" disabled>Stop</button>
         </div>
+        <p class="muted" style="font-size:.76rem;margin:6px 2px 0">One host, a CIDR block (e.g. 10.0.0.0/24), or a comma / space separated list. Scanning is gated by the scope-authorization system.</p>
         <div class="scan-bar"><div class="scan-bar-fill" id="sfill"></div></div>
         <div class="run-status" id="sstat">Idle.</div>
-        <table class="scan-table" id="stab" hidden><thead><tr><th>Port</th><th>Service</th><th>Banner</th></tr></thead><tbody id="stbody"></tbody></table>
+        <table class="scan-table" id="stab" hidden><thead><tr id="shead"><th>Port</th><th>Service</th><th>Banner</th></tr></thead><tbody id="stbody"></tbody></table>
         <div class="btns" id="sactions" hidden>
           <button class="btn ghost sm" id="snmap">Deep scan open ports with nmap</button>
           <button class="btn ghost sm" id="scopy">Copy open ports</button>
+          <button class="btn ghost sm" id="scsv">Export CSV</button>
+          <button class="btn ghost sm" id="sjson">Export JSON</button>
         </div>
       </div>`;
     const $$ = (id) => $("#" + id, el);
+    const TK = (typeof window !== "undefined" && window.DarknodeToolkit) || {};
     $$("spreset").onchange = () => { $$("scustom").style.display = $$("spreset").value === "custom" ? "" : "none"; };
-    let running = false, curId = null, openPorts = [];
-    const setRunning = (r) => { running = r; $$("sgo").disabled = r; $$("sstop").disabled = !r; };
+    let running = false, curId = null, openPorts = [], rows = [], cancelAll = false;
+    const setRunning = (r) => { running = r; cancelAll = false; $$("sgo").disabled = r; $$("sstop").disabled = !r; };
+    // Resolve the port list, surfacing an error instead of silently defaulting.
     function portsFor() {
       const p = $$("spreset").value;
-      if (p === "top") return TOP_PORTS;
-      if (p === "1-1024") return rangePorts(1, 1024);
-      if (p === "1-10000") return rangePorts(1, 10000);
+      if (p === "top") return { ports: TOP_PORTS };
+      if (p === "1-1024") return { ports: rangePorts(1, 1024) };
+      if (p === "1-10000") return { ports: rangePorts(1, 10000) };
+      if (TK.parsePortSpec) return TK.parsePortSpec($$("scustom").value);
       const m = ($$("scustom").value || "").match(/^(\d+)\s*-\s*(\d+)$/);
-      if (m) return rangePorts(Math.max(1, +m[1]), Math.min(65535, +m[2]));
-      return TOP_PORTS;
+      return m ? { ports: rangePorts(+m[1], +m[2]) } : { error: "invalid port range" };
     }
+    const sstat = (cls, txt) => { $$("sstat").className = "run-status " + (cls || ""); $$("sstat").textContent = txt; };
     async function run() {
-      const host = $$("shost").value.trim(); if (!host) return;
-      if (!await ensureScope("scan", host)) { $$("sstat").className = "run-status"; $$("sstat").textContent = "Scan not authorized for " + host + "."; return; }
-      openPorts = []; $$("stbody").innerHTML = ""; $$("stab").hidden = true; $$("sactions").hidden = true;
-      const ports = portsFor(); curId = "s" + Date.now();
-      setRunning(true); $$("sfill").style.width = "0%"; $$("sstat").className = "run-status"; $$("sstat").textContent = `Scanning ${host} (${ports.length} ports)...`;
-      scanRoute.hit = (d) => {
-        if (d.id !== curId) return;
-        openPorts.push(d.port); $$("stab").hidden = false; $$("sactions").hidden = false;
-        const svc = SERVICES[d.port] || "";
-        $$("stbody").insertAdjacentHTML("beforeend", `<tr><td class="mono ok">${d.port}</td><td>${esc(svc)}</td><td class="mono muted">${esc(d.banner || "")}</td></tr>`);
-      };
-      scanRoute.progress = (d) => { if (d.id === curId) $$("sfill").style.width = Math.round((d.done / d.total) * 100) + "%"; };
-      scanRoute.done = (d) => {
-        if (d.id !== curId) return; setRunning(false); $$("sfill").style.width = "100%";
-        $$("sstat").className = "run-status " + (openPorts.length ? "ok" : "");
-        $$("sstat").textContent = d.cancelled ? `Stopped. ${openPorts.length} open.` : `Done. ${openPorts.length} open port${openPorts.length === 1 ? "" : "s"} found.`;
-      };
-      await S.scanPorts({ id: curId, host, ports });
+      const raw = $$("shost").value.trim(); if (!raw) return;
+      const { ports, error: perr } = portsFor();
+      if (perr) { sstat("bad", "Port spec: " + perr); return; }
+      const exp = TK.expandTargets ? TK.expandTargets(raw, { maxHosts: 1024 }) : { groups: [{ token: raw, hosts: [raw] }], total: 1, errors: [], truncated: false };
+      if (exp.errors.length && !exp.groups.length) { sstat("bad", exp.errors.join("; ")); return; }
+      // Authorize each distinct target token (host or CIDR) up front.
+      const groups = [];
+      for (const g of exp.groups) {
+        if (!await ensureScope("scan", g.token)) { sstat("", "Scan not authorized for " + g.token + "."); return; }
+        groups.push(g);
+      }
+      openPorts = []; rows = []; $$("stbody").innerHTML = ""; $$("stab").hidden = true; $$("sactions").hidden = true;
+      const multi = exp.total > 1;
+      $$("shead").innerHTML = (multi ? "<th>Host</th>" : "") + "<th>Port</th><th>Service</th><th>Banner</th>";
+      setRunning(true); $$("sfill").style.width = "0%";
+      const allHosts = []; for (const g of groups) for (const hh of g.hosts) allHosts.push(hh);
+      let hostsDone = 0;
+      const noteTrunc = exp.truncated ? " (capped at " + exp.total + " hosts)" : (exp.errors.length ? " (" + exp.errors.length + " token(s) skipped)" : "");
+      for (const host of allHosts) {
+        if (cancelAll) break;
+        curId = "s" + Date.now() + "-" + hostsDone;
+        sstat("", `Scanning ${host} (${ports.length} ports)${multi ? ` — host ${hostsDone + 1}/${allHosts.length}` : ""}${noteTrunc}...`);
+        await new Promise((resolve) => {
+          scanRoute.hit = (d) => {
+            if (d.id !== curId) return;
+            openPorts.push((multi ? host + ":" : "") + d.port);
+            const svc = SERVICES[d.port] || "";
+            rows.push({ host, port: d.port, service: svc, banner: d.banner || "" });
+            $$("stab").hidden = false; $$("sactions").hidden = false;
+            $$("stbody").insertAdjacentHTML("beforeend", `<tr>${multi ? `<td class="mono muted">${esc(host)}</td>` : ""}<td class="mono ok">${d.port}</td><td>${esc(svc)}</td><td class="mono muted">${esc(d.banner || "")}</td></tr>`);
+          };
+          scanRoute.progress = (d) => { if (d.id === curId) $$("sfill").style.width = Math.round(((hostsDone + d.done / d.total) / allHosts.length) * 100) + "%"; };
+          scanRoute.done = (d) => { if (d.id === curId) resolve(); };
+          S.scanPorts({ id: curId, host, ports });
+        });
+        hostsDone++;
+      }
+      setRunning(false); $$("sfill").style.width = "100%";
+      sstat(openPorts.length ? "ok" : "", `${cancelAll ? "Stopped" : "Done"}. ${rows.length} open port${rows.length === 1 ? "" : "s"} across ${allHosts.length} host${allHosts.length === 1 ? "" : "s"}${noteTrunc}.`);
+    }
+    async function exportAs(fmt) {
+      if (!rows.length) return;
+      const text = fmt === "csv" ? (TK.resultsToCsv ? TK.resultsToCsv(rows) : "") : (TK.resultsToJson ? TK.resultsToJson(rows, { target: $$("shost").value.trim() }) : JSON.stringify(rows, null, 2));
+      if (S.auditSave) { const r = await S.auditSave(text, "scan-results." + fmt, fmt); if (r && r.ok) _toast("Saved " + r.path); else if (!(r && r.canceled)) _toast("Export failed" + (r && r.error ? ": " + r.error : "")); }
+      else { navigator.clipboard?.writeText(text); _toast("Copied " + fmt.toUpperCase() + " to clipboard"); }
     }
     $$("sgo").onclick = run;
     $$("shost").onkeydown = (e) => { if (e.key === "Enter" && !running) run(); };
-    $$("sstop").onclick = () => { if (curId) S.scanCancel(curId); };
-    $$("snmap").onclick = () => { const h = $$("shost").value.trim(); if (h && openPorts.length) go("runner", { cmd: `nmap -sV -sC -p ${openPorts.join(",")} ${h}` }); };
+    $$("sstop").onclick = () => { cancelAll = true; if (curId) S.scanCancel(curId); };
+    $$("snmap").onclick = () => { const h = ($$("shost").value.trim().split(/[\s,;]+/)[0] || "").replace(/\/\d+$/, ""); const bare = [...new Set(rows.map((r) => r.port))]; if (h && bare.length) go("runner", { cmd: `nmap -sV -sC -p ${bare.join(",")} ${h}` }); };
     $$("scopy").onclick = (e) => { navigator.clipboard?.writeText(openPorts.join(",")); e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "Copy open ports"), 1200); };
-    currentTermCleanup = () => { if (curId && running) S.scanCancel(curId); scanRoute.hit = scanRoute.progress = scanRoute.done = null; };
+    $$("scsv").onclick = () => exportAs("csv");
+    $$("sjson").onclick = () => exportAs("json");
+    currentTermCleanup = () => { cancelAll = true; if (curId && running) S.scanCancel(curId); scanRoute.hit = scanRoute.progress = scanRoute.done = null; };
   },
 
   fuzzer(el) {
@@ -2574,9 +2614,10 @@ ${ollamaLine}`;
   recon(el) {
     el.innerHTML = `
       <h1>Recon</h1><p class="sub">DNS, WHOIS, and HTTP security headers &mdash; native lookups the browser can't make.</p>
-      <div class="card" style="max-width:820px"><div class="lbl">DNS records</div>
+      <div class="card" style="max-width:820px"><div class="lbl">DNS records &middot; email auth &middot; DNSSEC</div>
         <div class="run-bar"><input class="f mono" id="dhost" value="${esc(targetVal())}" placeholder="domain" style="flex:1"><button class="btn" id="dgo">Lookup</button></div>
-        <pre class="out" id="dout" hidden></pre></div>
+        <pre class="out" id="dout" hidden></pre>
+        <div id="dsec" hidden style="margin-top:10px"></div></div>
       <div class="card" style="max-width:820px"><div class="lbl">WHOIS</div>
         <div class="run-bar"><input class="f mono" id="whost" value="${esc(targetVal())}" placeholder="domain or IP" style="flex:1"><button class="btn" id="wgo">Query</button></div>
         <pre class="out" id="wout" hidden style="max-height:360px;overflow:auto"></pre></div>
@@ -2599,15 +2640,36 @@ ${ollamaLine}`;
       (rec.MX || []).forEach((m) => add("MX", m.priority + " " + m.exchange));
       (rec.NS || []).forEach((n) => add("NS", n));
       (rec.TXT || []).forEach((t) => add("TXT", Array.isArray(t) ? t.join("") : t));
+      (rec.CAA || []).forEach((c) => add("CAA", (c.critical ? "[critical] " : "") + (c.issue ? "issue " + c.issue : c.issuewild ? "issuewild " + c.issuewild : c.iodef ? "iodef " + c.iodef : JSON.stringify(c))));
       (rec.PTR || []).forEach((p) => add("PTR", p));
       if (rec.SOA) add("SOA", rec.SOA.nsname + " · " + rec.SOA.hostmaster);
       return L.join("\n") || "  no records found";
     }
+    // Email-authentication + DNSSEC posture, graded via the pure analysis helpers.
+    const TK = (typeof window !== "undefined" && window.DarknodeToolkit) || {};
+    function fmtDnsSec(rec) {
+      if (!TK.parseSpf) return "";
+      const mark = (state) => state === "ok" ? `<span class="ok">✓</span>` : state === "warn" ? `<span style="color:var(--warn)">●</span>` : `<span class="bad">✗</span>`;
+      const row = (state, label, detail, issues) => `<div class="hdr-row">${mark(state)}<strong>${esc(label)}</strong><span class="muted mono" style="flex:1;min-width:0">${esc(detail)}</span>${(issues && issues.length) ? `<span class="muted" style="color:var(--warn)">${esc(issues.join(" · "))}</span>` : ""}</div>`;
+      const out = [];
+      const spf = TK.parseSpf(rec.TXT);
+      out.push(row(!spf.present ? "bad" : spf.issues.length ? "warn" : "ok", "SPF", spf.present ? (spf.all || "(no all)") + " · " + spf.lookups + " lookups" : "not published", spf.issues));
+      const dmarc = TK.parseDmarc(rec.DMARC_TXT);
+      out.push(row(!dmarc.present ? "bad" : dmarc.issues.length ? "warn" : "ok", "DMARC", dmarc.present ? "p=" + (dmarc.policy || "?") + (dmarc.pct != null && dmarc.pct !== 100 ? " pct=" + dmarc.pct : "") : "not published", dmarc.issues));
+      const dkim = TK.parseDkim(rec.DKIM_RAW);
+      out.push(row(dkim.present ? "ok" : "warn", "DKIM", dkim.present ? dkim.count + " selector" + (dkim.count === 1 ? "" : "s") + ": " + dkim.selectors.filter((s) => !s.revoked).map((s) => s.selector).join(", ") : "no common selector found (may use a custom selector)", []));
+      const caa = TK.summarizeCaa(rec.CAA);
+      out.push(row(caa.present ? "ok" : "warn", "CAA", caa.present ? "issuers: " + (caa.issuers.join(", ") || "(restrictive)") : "none — any CA may issue certificates", []));
+      const sec = TK.summarizeDnssec(rec.DNSSEC);
+      out.push(row(sec.enabled === true ? "ok" : sec.enabled === false ? "bad" : "warn", "DNSSEC", sec.note, []));
+      return `<div class="lbl" style="margin-top:4px">Email authentication &amp; DNSSEC</div>` + out.join("");
+    }
     $$("dgo").onclick = async () => {
       const host = $$("dhost").value.trim(); if (!host) return;
-      const out = $$("dout"); out.hidden = false; out.textContent = "looking up " + host + "...";
+      const out = $$("dout"), dsec = $$("dsec"); out.hidden = false; dsec.hidden = true; out.textContent = "looking up " + host + " (records, email auth, DNSSEC)...";
       const r = await S.dnsLookup(host);
       out.textContent = r.ok ? fmtRec(r.rec) : "error: " + r.error;
+      if (r.ok) { const html = fmtDnsSec(r.rec); if (html) { dsec.hidden = false; dsec.innerHTML = html; } }
     };
     $$("wgo").onclick = async () => {
       const q = $$("whost").value.trim(); if (!q) return;
@@ -2615,16 +2677,18 @@ ${ollamaLine}`;
       const r = await S.whois(q);
       out.textContent = r.ok ? r.text : "error: " + r.error;
     };
-    const SEC = [["strict-transport-security", "HSTS"], ["content-security-policy", "Content-Security-Policy"], ["x-frame-options", "X-Frame-Options"], ["x-content-type-options", "X-Content-Type-Options"], ["referrer-policy", "Referrer-Policy"], ["permissions-policy", "Permissions-Policy"]];
     $$("hgo").onclick = async () => {
       const url = $$("hurl").value.trim(); if (!url) return;
       const box = $$("hgrade"); box.hidden = false; box.innerHTML = `<div class="run-status">analyzing...</div>`;
       const r = await S.httpReq({ method: "GET", url });
       if (!r.ok) { box.innerHTML = `<div class="run-status bad">error: ${esc(r.error)}</div>`; return; }
       const h = r.headers || {};
-      const rows = SEC.map(([k, label]) => { const on = h[k] !== undefined; return `<div class="hdr-row"><span class="${on ? "ok" : "bad"}">${on ? "✓" : "✗"}</span><strong>${label}</strong>${on ? `<span class="muted mono">${esc(String(h[k]).slice(0, 90))}</span>` : `<span class="muted">missing</span>`}</div>`; }).join("");
-      const score = SEC.filter(([k]) => h[k] !== undefined).length;
-      box.innerHTML = `<div class="run-status ${score >= 4 ? "ok" : ""}">${r.status} ${esc(r.statusText || "")} · server: ${esc(h["server"] || "?")} · security score ${score}/${SEC.length}</div>${rows}`;
+      // Value-based grading (HSTS max-age, CSP unsafe-inline, etc.), not presence.
+      const graded = (TK.scoreHeaders ? TK.scoreHeaders(h) : { score: 0, max: 0, grade: "?", checks: [] });
+      const mark = (c) => c.points >= 0.95 ? `<span class="ok">✓</span>` : c.points > 0 ? `<span style="color:var(--warn)">●</span>` : `<span class="bad">✗</span>`;
+      const rows = graded.checks.map((c) => `<div class="hdr-row">${mark(c)}<strong>${esc(c.label)}</strong>${c.present ? `<span class="muted mono" style="flex:1;min-width:0">${esc(String(c.value).slice(0, 90))}</span>` : `<span class="muted" style="flex:1">missing</span>`}${c.note ? `<span class="muted" style="color:var(--warn)">${esc(c.note)}</span>` : ""}</div>`).join("");
+      const good = graded.max && (graded.score / graded.max) >= 0.8;
+      box.innerHTML = `<div class="run-status ${good ? "ok" : ""}">${r.status} ${esc(r.statusText || "")} · server: ${esc(h["server"] || "?")} · grade ${esc(graded.grade)} · security score ${graded.score}/${graded.max}</div>${rows}`;
     };
     $$("cgo").onclick = async () => {
       const host = $$("chost").value.trim(); if (!host) return;
@@ -2765,7 +2829,7 @@ ${ollamaLine}`;
       ["URL encode", (s) => encodeURIComponent(s)],
       ["URL decode", (s) => decodeURIComponent(s)],
       ["Hex encode", (s) => Array.from(new TextEncoder().encode(s)).map((b) => b.toString(16).padStart(2, "0")).join("")],
-      ["Hex decode", (s) => new TextDecoder().decode(new Uint8Array(s.trim().replace(/\s+/g, "").match(/.{1,2}/g).map((h) => parseInt(h, 16))))],
+      ["Hex decode", (s) => { const hex = s.trim().replace(/\s+/g, ""); if (!hex) throw new Error("no input"); if (!/^[0-9a-fA-F]+$/.test(hex)) throw new Error("not valid hex"); if (hex.length % 2) throw new Error("odd number of hex digits"); return new TextDecoder().decode(new Uint8Array(hex.match(/.{2}/g).map((h) => parseInt(h, 16)))); }],
       ["ROT13", (s) => s.replace(/[a-z]/gi, (c) => String.fromCharCode((c <= "Z" ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26))],
       ["JWT decode", (s) => { const p = s.trim().split("."); if (p.length < 2) throw new Error("not a JWT"); const d = (x) => JSON.stringify(JSON.parse(decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/"))))), null, 2); return "// header\n" + d(p[0]) + "\n\n// payload\n" + d(p[1]); }],
       ["SHA-1", (s) => sha(s, "SHA-1")],
@@ -2852,18 +2916,53 @@ ${ollamaLine}`;
         <div class="run-status" id="cstat"></div>
         <div id="cres"></div>
       </div>`;
-    const run = async () => {
-      const q = $("#cq", el).value.trim(); if (!q) return;
-      const stat = $("#cstat", el), res = $("#cres", el);
-      stat.className = "run-status"; stat.textContent = "searching NVD..."; res.innerHTML = "";
-      const r = await S.cveSearch(q);
-      if (!r.ok) { stat.className = "run-status bad"; stat.textContent = r.error; return; }
-      stat.className = "run-status ok"; stat.textContent = r.total + " results" + (r.list.length < r.total ? " (showing " + r.list.length + ")" : "");
-      res.innerHTML = r.list.map((c) => `<div class="cve-item"><div class="cve-top"><span class="cve-id" data-id="${esc(c.id)}">${esc(c.id)}</span>${c.sev ? `<span class="sev ${esc(String(c.sev).toLowerCase())}">${esc(c.sev)} ${esc(String(c.score))}</span>` : ""}<span class="muted" style="margin-left:auto">${esc(c.published)}</span></div><div class="muted cve-desc">${esc(c.desc)}</div></div>`).join("") || `<div class="muted" style="padding:8px">no results</div>`;
+    const TK = (typeof window !== "undefined" && window.DarknodeToolkit) || {};
+    const PER = 20;
+    let state = { q: "", total: 0, loaded: 0, loading: false };
+    // CVSS vector -> readable metric chips + impact/exploitability (v3.x only;
+    // older v2 vectors are shown verbatim without a breakdown).
+    function cvssBreakdown(vector) {
+      if (!vector || !TK.parseVector || !/^CVSS:3/i.test(vector)) return vector ? `<div class="muted mono" style="font-size:.74rem;margin-top:4px">${esc(vector)}</div>` : "";
+      let p, r;
+      try { p = TK.parseVector(vector); r = TK.score(p); } catch (_) { return `<div class="muted mono" style="font-size:.74rem;margin-top:4px">${esc(vector)}</div>`; }
+      const NAMES = { AV: { N: "Network", A: "Adjacent", L: "Local", P: "Physical" }, AC: { L: "Low", H: "High" }, PR: { N: "None", L: "Low", H: "High" }, UI: { N: "None", R: "Required" }, S: { U: "Unchanged", C: "Changed" }, C: { H: "High", L: "Low", N: "None" }, I: { H: "High", L: "Low", N: "None" }, A: { H: "High", L: "Low", N: "None" } };
+      const LBL = { AV: "Attack vector", AC: "Complexity", PR: "Privileges", UI: "User interaction", S: "Scope", C: "Confidentiality", I: "Integrity", A: "Availability" };
+      const chips = ["AV", "AC", "PR", "UI", "S", "C", "I", "A"].map((k) => `<span class="cve-metric" title="${esc(LBL[k])}"><b>${k}</b> ${esc((NAMES[k] && NAMES[k][p.metrics[k]]) || p.metrics[k])}</span>`).join("");
+      return `<div class="cve-vec"><div class="cve-metrics">${chips}</div><div class="muted" style="font-size:.74rem;margin-top:4px">Impact ${r.impact} · Exploitability ${r.exploitability} · <span class="mono">${esc(r.vector)}</span></div></div>`;
+    }
+    function itemHtml(c) {
+      const kev = c.kev ? `<span class="cve-kev" title="On the CISA Known Exploited Vulnerabilities catalog — added ${esc(c.kev.dateAdded)}${c.kev.dueDate ? ", remediate by " + esc(c.kev.dueDate) : ""}">KEV · actively exploited${/known/i.test(c.kev.ransomware || "") ? " · ransomware" : ""}</span>` : "";
+      return `<div class="cve-item"><div class="cve-top"><span class="cve-id" data-id="${esc(c.id)}">${esc(c.id)}</span>${c.sev ? `<span class="sev ${esc(String(c.sev).toLowerCase())}">${esc(c.sev)} ${esc(String(c.score))}${c.cvssVersion ? " · v" + esc(c.cvssVersion) : ""}</span>` : ""}${kev}<span class="muted" style="margin-left:auto">${esc(c.published)}</span></div><div class="muted cve-desc">${esc(c.desc)}</div>${cvssBreakdown(c.vector)}</div>`;
+    }
+    const res = () => $("#cres", el), stat = () => $("#cstat", el);
+    function renderMore(r, append) {
+      const old = res().querySelector("#cmore"); if (old) old.remove();
+      const html = r.list.map(itemHtml).join("");
+      if (append) res().insertAdjacentHTML("beforeend", html);
+      else res().innerHTML = html || `<div class="muted" style="padding:8px">no results</div>`;
+      state.loaded += r.list.length;
+      if (state.loaded < state.total) res().insertAdjacentHTML("beforeend", `<button class="btn ghost sm" id="cmore" style="margin-top:10px">Load more (${state.loaded} of ${state.total})</button>`);
+    }
+    const run = async (append) => {
+      if (state.loading) return;
+      const q = append ? state.q : $("#cq", el).value.trim(); if (!q) return;
+      state.loading = true;
+      if (!append) { state = { q, total: 0, loaded: 0, loading: true }; res().innerHTML = ""; }
+      stat().className = "run-status"; stat().textContent = append ? "loading more from NVD..." : "searching NVD + CISA KEV...";
+      const r = await S.cveSearch(q, { perPage: PER, startIndex: append ? state.loaded : 0 });
+      state.loading = false;
+      if (!r.ok) { stat().className = "run-status bad"; stat().textContent = r.error; return; }
+      state.total = r.total;
+      const kevCount = r.list.filter((c) => c.kev).length;
+      stat().className = "run-status ok"; stat().textContent = r.total + " result" + (r.total === 1 ? "" : "s") + (kevCount ? " · " + kevCount + " on this page actively exploited (KEV)" : "");
+      renderMore(r, append);
     };
-    $("#cgo", el).onclick = run;
-    $("#cq", el).onkeydown = (e) => { if (e.key === "Enter") run(); };
-    $("#cres", el).onclick = (e) => { const a = e.target.closest("[data-id]"); if (a) S.openExternal("https://nvd.nist.gov/vuln/detail/" + a.dataset.id); };
+    $("#cgo", el).onclick = () => run(false);
+    $("#cq", el).onkeydown = (e) => { if (e.key === "Enter") run(false); };
+    res().onclick = (e) => {
+      if (e.target.closest("#cmore")) { run(true); return; }
+      const a = e.target.closest("[data-id]"); if (a) S.openExternal("https://nvd.nist.gov/vuln/detail/" + a.dataset.id);
+    };
   },
 
   refs(el) {

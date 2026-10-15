@@ -20,6 +20,7 @@ const hardeningAudit = require("./lib/hardening-audit");
 const toolkit = require("./lib/toolkit");
 const { scanPorts } = require("./lib/recon/portscan");
 const { fuzzDirs } = require("./lib/recon/fuzz");
+const cveLib = require("./lib/cve");
 const { safeFetch } = require("./lib/net/guard");
 const { ScopeEnforcer } = require("./lib/scope/enforce");
 const redactor = require("./lib/secret/redact");
@@ -618,21 +619,31 @@ ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
 ipcMain.handle("win:maximize", () => { if (!win) return false; win.isMaximized() ? win.unmaximize() : win.maximize(); return win.isMaximized(); });
 ipcMain.handle("win:close", () => { if (win) win.close(); });
 
-// ---- CVE search (NVD) ----
-ipcMain.handle("cve:search", async (_e, q) => {
+// ---- CVE search (NVD) + CISA KEV enrichment ----
+// The KEV catalog is fetched once per process and cached; it flags which of the
+// returned CVEs are KNOWN to be actively exploited in the wild.
+let _mainKevIndex = null, _mainKevFetchedAt = 0;
+async function kevIndex() {
+  if (_mainKevIndex && (Date.now() - _mainKevFetchedAt) < 6 * 3600e3) return _mainKevIndex;
+  try {
+    const r = await fetch("https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", { headers: { "User-Agent": "Darknode" } });
+    if (r.ok) { const d = await r.json(); _mainKevIndex = cveLib.buildKevIndex(d && d.vulnerabilities); _mainKevFetchedAt = Date.now(); }
+  } catch (_) {}
+  return _mainKevIndex;
+}
+ipcMain.handle("cve:search", async (_e, q, opts) => {
   q = (q || "").trim(); if (!q) return { ok: false, error: "empty query" };
   const isId = /^CVE-\d{4}-\d+$/i.test(q);
-  const url = "https://services.nvd.nist.gov/rest/json/cves/2.0?" + (isId ? "cveId=" + q.toUpperCase() : "keywordSearch=" + encodeURIComponent(q)) + "&resultsPerPage=20";
+  const perPage = Math.min(Math.max((opts && +opts.perPage) || 20, 1), 100);
+  const startIndex = Math.max((opts && +opts.startIndex) || 0, 0);
+  const url = "https://services.nvd.nist.gov/rest/json/cves/2.0?" + (isId ? "cveId=" + q.toUpperCase() : "keywordSearch=" + encodeURIComponent(q)) + "&resultsPerPage=" + perPage + "&startIndex=" + startIndex;
   try {
     const r = await fetch(url, { headers: { "User-Agent": "Darknode" } });
     if (!r.ok) return { ok: false, error: r.status === 403 ? "NVD rate limit — wait a moment" : r.status + " " + r.statusText };
     const d = await r.json();
-    const list = (d.vulnerabilities || []).map((v) => {
-      const c = v.cve, desc = (c.descriptions.find((x) => x.lang === "en") || c.descriptions[0] || {}).value || "";
-      const m = c.metrics || {}, p = m.cvssMetricV31 || m.cvssMetricV30 || m.cvssMetricV2;
-      return { id: c.id, desc, score: p && p[0] ? p[0].cvssData.baseScore : "", sev: p && p[0] ? (p[0].cvssData.baseSeverity || p[0].baseSeverity || "") : "", published: (c.published || "").slice(0, 10) };
-    });
-    return { ok: true, total: d.totalResults, list };
+    const norm = cveLib.normalizeNvd(d);
+    try { const idx = await kevIndex(); if (idx) cveLib.markKev(norm.list, idx); } catch (_) {}
+    return { ok: true, total: norm.total, startIndex, perPage, count: norm.list.length, list: norm.list };
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
@@ -715,13 +726,41 @@ ipcMain.handle("fuzz:dirs", async (_e, { id, base, words, concurrency, timeout }
 });
 
 // ---- DNS lookups (native resolver) ----
+// Common DKIM selector names published by mainstream mail providers; we probe
+// each at <selector>._domainkey.<domain> so the recon UI can show whether DKIM
+// is actually deployed (there is no way to enumerate selectors from DNS alone).
+const DKIM_SELECTORS = ["default", "google", "selector1", "selector2", "k1", "k2", "dkim", "mail", "s1", "s2", "mandrill", "mailjet", "smtp", "zoho", "fm1", "fm2", "fm3", "protonmail", "pm", "mx", "key1"];
+// DNSSEC probe via DNS-over-HTTPS (Cloudflare). A real query with the DO bit
+// set: the AD (Authenticated Data) flag and/or a DNSKEY answer (type 48) prove
+// the zone is signed. We use a trusted, fixed public resolver (not safeFetch —
+// same pattern as the NVD/crt.sh calls).
+async function dohDnssec(host) {
+  try {
+    const r = await fetch("https://cloudflare-dns.com/dns-query?name=" + encodeURIComponent(host) + "&type=DNSKEY&do=1", { headers: { Accept: "application/dns-json", "User-Agent": "Darknode" } });
+    if (!r.ok) return { ok: false, enabled: null, error: "resolver " + r.status };
+    const d = await r.json();
+    const dnskey = Array.isArray(d.Answer) && d.Answer.some((a) => a.type === 48);
+    return { ok: true, enabled: !!d.AD || dnskey, ad: !!d.AD, dnskey };
+  } catch (e) { return { ok: false, enabled: null, error: e.message }; }
+}
 ipcMain.handle("dns:lookup", async (_e, host) => {
   host = (host || "").trim().replace(/^https?:\/\//, "").split("/")[0];
   if (!host) return { ok: false, error: "no host" };
   const rec = {};
-  const kinds = [["A", "resolve4"], ["AAAA", "resolve6"], ["MX", "resolveMx"], ["NS", "resolveNs"], ["TXT", "resolveTxt"], ["CNAME", "resolveCname"], ["SOA", "resolveSoa"]];
+  const kinds = [["A", "resolve4"], ["AAAA", "resolve6"], ["MX", "resolveMx"], ["NS", "resolveNs"], ["TXT", "resolveTxt"], ["CNAME", "resolveCname"], ["SOA", "resolveSoa"], ["CAA", "resolveCaa"]];
   for (const [label, fn] of kinds) { try { rec[label] = await dns[fn](host); } catch (_) { rec[label] = null; } }
   try { if (rec.A && rec.A.length) rec.PTR = await dns.reverse(rec.A[0]).catch(() => null); } catch (_) {}
+  // Email-auth + DNSSEC posture (skip for bare IP literals — these are domain concepts).
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
+  if (!isIp) {
+    try { rec.DMARC_TXT = await dns.resolveTxt("_dmarc." + host); } catch (_) { rec.DMARC_TXT = null; }
+    const dkim = await Promise.all(DKIM_SELECTORS.map(async (sel) => {
+      try { const records = await dns.resolveTxt(sel + "._domainkey." + host); return { selector: sel, records }; }
+      catch (_) { return null; }
+    }));
+    rec.DKIM_RAW = dkim.filter(Boolean);
+    rec.DNSSEC = await dohDnssec(host);
+  }
   return { ok: true, host, rec };
 });
 

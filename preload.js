@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld("darknode", {
   netGet: (opts) => ipcRenderer.invoke("net:get", opts),
   onWinState: (cb) => ipcRenderer.on("win:state", (_e, max) => cb(max)),
   httpReq: (opts) => ipcRenderer.invoke("http:request", opts),
-  cveSearch: (q) => ipcRenderer.invoke("cve:search", q),
+  cveSearch: (q, opts) => ipcRenderer.invoke("cve:search", q, opts),
   resultsList: () => ipcRenderer.invoke("results:list"),
   resultsRead: (name) => ipcRenderer.invoke("results:read", name),
   resultsReveal: () => ipcRenderer.invoke("results:reveal"),
