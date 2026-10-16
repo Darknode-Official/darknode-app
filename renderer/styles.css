@@ -141,7 +141,7 @@ main::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
 #palette-btn{display:inline-flex;align-items:center;gap:8px}
 #palette-btn kbd{background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.66rem}
 
-#page{padding:26px 30px;overflow-y:auto;flex:1;min-height:0;animation:fade .28s var(--ease)}
+#page{padding:26px 30px;overflow-y:auto;flex:1;width:100%;min-width:0;min-height:0;animation:fade .28s var(--ease)}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
@@ -167,7 +167,7 @@ h3{font-size:1rem;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
 .lbl{font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.13em;color:var(--mut);margin-bottom:12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:13px;margin-bottom:8px}
 /* dashboard hero */
-.dash-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:22px;align-items:center;margin-bottom:22px;
+.dash-hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px;align-items:center;margin-bottom:22px;
   border:1px solid var(--line);border-radius:var(--r-xl);padding:24px 26px;
   background:radial-gradient(560px 220px at 92% -30%,color-mix(in srgb,var(--acc) 18%,transparent),transparent 60%),linear-gradient(180deg,color-mix(in srgb,var(--card) 90%,var(--acc) 3%),var(--card));box-shadow:var(--sh-1)}
 .dh-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:.6rem;font-weight:800;letter-spacing:.16em;color:var(--acc);margin-bottom:10px}
@@ -1082,6 +1082,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 
 /* Calm the canvas: drop the ambient glow + grid overlay */
 :root[data-skin="graphite"] .shell::before,
+:root[data-skin="graphite"] .shell::after,
 :root[data-skin="graphite"] main::before{display:none!important}
 :root[data-skin="graphite"] .shell{background:var(--bg)}
 
