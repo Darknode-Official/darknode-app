@@ -20,12 +20,19 @@
   ],
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
+    "sync-web": "node scripts/sync-web.mjs",
+    "prestart": "node scripts/sync-web.mjs",
     "start": "electron .",
     "test": "node test/run.mjs",
+    "e2e:webshell": "electron test/e2e/webshell.e2e.cjs",
     "scan:secrets": "node scripts/scan-secrets.mjs",
+    "predist:linux": "node scripts/sync-web.mjs",
     "dist:linux": "electron-builder --linux AppImage deb",
+    "predist:win": "node scripts/sync-web.mjs",
     "dist:win": "electron-builder --win nsis",
+    "predist:mac": "node scripts/sync-web.mjs",
     "dist:mac": "electron-builder --mac dmg zip",
+    "predist": "node scripts/sync-web.mjs",
     "dist": "electron-builder -mwl",
     "publish:release": "bash scripts/publish-release.sh"
   },
@@ -44,7 +51,10 @@
       "preload.js",
       "renderer/**/*",
       "lib/**/*",
-      "design/**/*"
+      "design/**/*",
+      "web/**/*",
+      "web/.source.json",
+      "web/.hosting.json"
     ],
     "linux": {
       "target": [
