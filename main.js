@@ -1,7 +1,7 @@
 // Darknode desktop - Electron main process. Runs shell commands (streamed),
 // checks installed tools, and proxies local Ollama. Renderer has no Node access
 // (contextIsolation) and talks only through the preload bridge.
-const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, session } = require("electron");
 const { spawn, execFile } = require("child_process");
 const os = require("os");
 const path = require("path");
@@ -25,6 +25,9 @@ const { safeFetch } = require("./lib/net/guard");
 const { ScopeEnforcer } = require("./lib/scope/enforce");
 const redactor = require("./lib/secret/redact");
 const { createVault, electronBackend } = require("./lib/secret/vault");
+const webshell = require("./lib/webshell/origin");
+const { createHandler: createWebHandler } = require("./lib/webshell/serve");
+const { runGoogleSignIn } = require("./lib/webshell/google-signin");
 
 // DA-008: redact secrets from the main-process log channel. Any value the vault
 // holds is registered with the redactor, so even an unusual token is scrubbed
@@ -51,32 +54,165 @@ const procs = new Map();
 const ptys = new Map();
 let ptySeq = 0;
 
-function createWindow() {
-  win = new BrowserWindow({
-    width: 1300, height: 840, minWidth: 900, minHeight: 600,
-    backgroundColor: "#06080f",
-    icon: path.join(__dirname, "renderer", "icon.png"),
-    frame: false,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
-      webviewTag: true,   // enables the built-in Browser section (<webview>)
+// ---- Shell selection (D0) ----
+// Default: the packaged website (web/, produced by scripts/sync-web.mjs) served on
+// the fixed app origin. DARKNODE_CLASSIC=1 keeps the legacy renderer reachable
+// until it is retired in D2; a missing web/ bundle also falls back to it.
+const WEB_ROOT = path.join(__dirname, "web");
+const CLASSIC_FILE = path.join(__dirname, "renderer", "index.html");
+const SHELL = (process.env.DARKNODE_CLASSIC === "1" || !fs.existsSync(path.join(WEB_ROOT, "index.html"))) ? "classic" : "web";
+if (SHELL === "classic" && process.env.DARKNODE_CLASSIC !== "1") console.warn("[darknode] web/ bundle missing - run `npm run sync-web`; using the classic renderer");
+const IPC_CTX = SHELL === "web"
+  ? { mode: "web", appOrigin: webshell.APP_ORIGIN }
+  : { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
+// Capabilities the web shell really exposes (window.darknode.desktop.caps).
+const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline"];
+const WEB_PARTITION = "persist:darknode";
+
+// The web origin must be a privileged, secure, service-worker-capable origin.
+// http://localhost already is (potentially trustworthy), so nothing is registered
+// for it; the session below intercepts it instead of opening a socket.
+
+// Every IPC handler is wrapped: the caller must be the top-level frame of the
+// trusted shell (app origin, or the classic file) and the channel must be one
+// that shell may use. A navigated, compromised or embedded frame is refused.
+{
+  const rawHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) => rawHandle(channel, (event, ...args) => {
+    let frame = null;
+    try { const f = event.senderFrame; if (f) frame = { url: f.url, isTop: !f.parent }; } catch (_) {}
+    if (!webshell.isTrustedSender(frame, IPC_CTX) || !webshell.channelAllowed(channel, IPC_CTX)) {
+      let from = "(no frame)"; try { from = frame ? new URL(frame.url).origin : from; } catch (_) {}
+      console.warn("[darknode] refused IPC " + channel + " from " + from);
+      throw new Error("IPC refused");
+    }
+    return fn(event, ...args);
+  });
+}
+
+// Wire the app session: serve web/ for the app origin, pass every other http
+// request through untouched, serve the vendored Firebase SDK locally, and deny
+// permission prompts the website does not need.
+function setupWebSession() {
+  const ses = session.fromPartition(WEB_PARTITION);
+  let hosting = {};
+  try { hosting = JSON.parse(fs.readFileSync(path.join(WEB_ROOT, ".hosting.json"), "utf8")); } catch (e) { console.warn("[darknode] web/.hosting.json unreadable; serving without hosting headers:", e.message); }
+  // The site imports the Firebase SDK from www.gstatic.com. When sync-web vendored
+  // that exact version, every reference in served JS/HTML is pointed at the local
+  // copy, so the console boots offline. All references are rewritten together
+  // (pages and the SDK's own cross-imports), so there is one SDK instance.
+  const vendorDir = path.join(WEB_ROOT, "__vendor");
+  const GSTATIC = "https://www.gstatic.com/firebasejs/";
+  const vendored = new Set();
+  try { for (const v of fs.readdirSync(path.join(vendorDir, "www.gstatic.com", "firebasejs"))) vendored.add(v); } catch (_) {}
+  const GSTATIC_RE = /https:\/\/www\.gstatic\.com\/firebasejs\/(\d+\.\d+\.\d+)\//g;
+  const serveWeb = createWebHandler({
+    root: WEB_ROOT, hosting,
+    transform: (p, buf) => {
+      if (!vendored.size || !/\.(m?js|html)$/.test(p)) return null;
+      const text = buf.toString("utf8");
+      if (!text.includes(GSTATIC)) return null;
+      return Buffer.from(text.replace(GSTATIC_RE, (m, ver) => (vendored.has(ver) ? "/__vendor/www.gstatic.com/firebasejs/" + ver + "/" : m)), "utf8");
     },
   });
+  ses.protocol.handle("http", (req) => {
+    let host = ""; try { host = new URL(req.url).host; } catch (_) {}
+    if (host === webshell.APP_HOST) return serveWeb(req);
+    return ses.fetch(req, { bypassCustomProtocolHandlers: true });
+  });
+  const ALLOWED_PERMS = new Set(["clipboard-read", "clipboard-sanitized-write", "fullscreen"]);
+  ses.setPermissionRequestHandler((wc, permission, cb, details) => {
+    cb(ALLOWED_PERMS.has(permission) && webshell.isAppUrl((details && details.requestingUrl) || wc.getURL()));
+  });
+  return ses;
+}
+
+function windowFrameOptions() {
+  if (SHELL === "classic") return { frame: false };
+  // Native window controls; the website draws its own top bar beneath them and
+  // marks it as the drag region (html[data-desktop] in the web CSS).
+  if (process.platform === "darwin") return { titleBarStyle: "hiddenInset" };
+  return { titleBarStyle: "hidden", titleBarOverlay: { color: "#ffffff", symbolColor: "#1f2937", height: 48 } };
+}
+
+function createWindow() {
+  const webPreferences = {
+    preload: path.join(__dirname, "preload.js"),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
+    webSecurity: true,
+    webviewTag: SHELL === "classic",   // the classic Browser section (<webview>) only
+  };
+  if (SHELL === "web") {
+    webPreferences.session = setupWebSession();
+    webPreferences.additionalArguments = ["--dn-shell=web", "--dn-app-origin=" + webshell.APP_ORIGIN, "--dn-app-version=" + app.getVersion(), "--dn-caps=" + WEB_CAPS.join(",")];
+  }
+  win = new BrowserWindow(Object.assign({
+    width: 1300, height: 840, minWidth: 900, minHeight: 600,
+    backgroundColor: SHELL === "web" ? "#ffffff" : "#06080f",
+    icon: path.join(__dirname, "renderer", "icon.png"),
+    title: "Darknode",
+    webPreferences,
+  }, windowFrameOptions()));
   win.setMenuBarVisibility(false);
   win.on("maximize", () => win.webContents.send("win:state", true));
   win.on("unmaximize", () => win.webContents.send("win:state", false));
   if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
-  if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
-  // Security: prevent the main renderer from navigating away from the local app.
+  if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, Number(process.env.DARKNODE_SHOT_DELAY) || 3500));
+  if (SHELL === "web") {
+    // Security: the main frame stays on the app origin; real web links open in the
+    // OS browser; every other scheme is dropped.
+    const guardNav = (e, url) => {
+      const kind = webshell.classifyNavigation(url);
+      if (kind === "allow") return;
+      e.preventDefault();
+      if (kind === "external") shell.openExternal(url);
+    };
+    win.webContents.on("will-navigate", guardNav);
+    win.webContents.on("will-redirect", (e, url, _inPlace, isMainFrame) => { if (isMainFrame) guardNav(e, url); });
+    // window.open: only the Firebase auth handler may open in-app, as a sandboxed
+    // popup that can only move between the auth/provider hosts.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      const kind = webshell.classifyWindowOpen(url);
+      if (kind === "auth-popup") {
+        return { action: "allow", overrideBrowserWindowOptions: { width: 520, height: 680, parent: win, autoHideMenuBar: true, titleBarStyle: "default", titleBarOverlay: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } };
+      }
+      if (kind === "blank") {
+        return { action: "allow", overrideBrowserWindowOptions: { width: 900, height: 1000, autoHideMenuBar: true, backgroundColor: "#ffffff", titleBarStyle: "default", titleBarOverlay: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } };
+      }
+      if (kind === "external") shell.openExternal(url);
+      return { action: "deny" };
+    });
+    win.webContents.on("did-create-window", (child, details) => {
+      // Auth popups may move between the provider hosts; a blank report window never
+      // navigates (its links go to the OS browser). Neither gets the bridge (preload).
+      const blank = webshell.classifyWindowOpen(details && details.url) === "blank";
+      const guardPopup = (e, url) => {
+        if (blank) { e.preventDefault(); if (webshell.classifyNavigation(url) === "external") shell.openExternal(url); return; }
+        if (!webshell.authPopupNavAllowed(url)) { e.preventDefault(); }
+      };
+      child.webContents.on("will-navigate", guardPopup);
+      child.webContents.on("will-redirect", guardPopup);
+      child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    });
+    // The site asks before unloading when a tool has typed input (beforeunload).
+    // Electron would silently cancel the navigation (e.g. sign-out); show the same
+    // leave-or-stay choice a browser shows instead.
+    win.webContents.on("will-prevent-unload", (e) => {
+      const choice = dialog.showMessageBoxSync(win, { type: "question", buttons: ["Leave", "Stay"], defaultId: 1, cancelId: 1, title: "Darknode", message: "Leave this page?", detail: "Changes you made may not be saved." });
+      if (choice === 0) e.preventDefault();
+    });
+    win.loadURL(webshell.APP_ORIGIN + "/");
+    return;
+  }
+  // Security: prevent the classic renderer from navigating away from the local app.
   win.webContents.on("will-navigate", (e, url) => {
     if (!url.startsWith("file://")) e.preventDefault();
   });
   // Security: block new-window requests from the renderer (links should use openExternal).
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  win.loadFile(CLASSIC_FILE);
 }
 
 // Constrain any web content (esp. the <webview> Browser tab): open real links in the
@@ -88,6 +224,10 @@ app.on("web-contents-created", (_e, contents) => {
   });
   contents.on("will-attach-webview", (_evt, wp) => { delete wp.preload; wp.nodeIntegration = false; wp.contextIsolation = true; wp.sandbox = true; });
 });
+// One instance: a second launch focuses the first (two processes must not share
+// the persistent web partition).
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -612,6 +752,41 @@ ipcMain.handle("openExternal", (_e, url) => {
   // schemes a browsed/redirected page could smuggle in.
   try { const p = new URL(String(url)).protocol; if (p === "http:" || p === "https:") return shell.openExternal(url); } catch (_) {}
   return false;
+});
+
+// ---- Web shell: Google sign-in via the system browser (D0) ----
+// Google blocks OAuth inside embedded browsers, so the page asks the app. The
+// system browser runs loopback + PKCE and only the Google ID token comes back;
+// the page signs in to Firebase with it. One flow at a time; a new request
+// cancels the previous one. Nothing here logs or stores the token.
+const GOOGLE_SIGNIN = {
+  clientId: process.env.DARKNODE_GOOGLE_CLIENT_ID || _oauthCfg.googleSignInClientId || _oauthCfg.gmailClientId || "",
+  clientSecret: process.env.DARKNODE_GOOGLE_CLIENT_SECRET || _oauthCfg.googleSignInClientSecret || (_oauthCfg.googleSignInClientId ? "" : _oauthCfg.gmailClientSecret) || "",
+};
+let _cancelGoogle = null;
+ipcMain.handle("auth:google", async () => {
+  if (_cancelGoogle) { try { _cancelGoogle(); } catch (_) {} }
+  const r = await runGoogleSignIn({
+    http, fetchImpl: fetch, openExternal: (u) => shell.openExternal(u),
+    clientId: GOOGLE_SIGNIN.clientId, clientSecret: GOOGLE_SIGNIN.clientSecret,
+    onCancel: (fn) => { _cancelGoogle = fn; },
+  });
+  _cancelGoogle = null;
+  if (r.ok && win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  return r.ok ? { ok: true, idToken: r.idToken } : { ok: false, error: r.error };
+});
+
+// Recolour the native window-controls overlay so it matches the page's top bar.
+ipcMain.handle("shell:titlebar", (_e, opts) => {
+  if (!win || process.platform === "darwin" || typeof win.setTitleBarOverlay !== "function") return false;
+  const hex = (v) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined);
+  const o = {};
+  if (hex(opts && opts.color)) o.color = opts.color;
+  if (hex(opts && opts.symbolColor)) o.symbolColor = opts.symbolColor;
+  const h = Number(opts && opts.height);
+  if (Number.isInteger(h) && h >= 28 && h <= 80) o.height = h;
+  if (!Object.keys(o).length) return false;
+  try { win.setTitleBarOverlay(o); return true; } catch (_) { return false; }
 });
 
 // ---- custom (frameless) window controls ----
