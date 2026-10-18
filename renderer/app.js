@@ -1392,14 +1392,14 @@ const sections = {
     async function doExport(format, name, asSave) {
       if (!report) return;
       let r; try { r = await S.auditExport(report, format); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
-      if (!r || !r.ok) { _toast("Export failed: " + ((r && r.error) || "unknown")); return; }
+      if (!r || !r.ok) { _toast("Export failed: " + ((r && r.error) || "unknown"), "error"); return; }
       if (asSave && S.auditSave) {
         const sv = await S.auditSave(r.text, name + "." + r.ext, r.ext);
-        if (sv && sv.ok) _toast("Saved to " + sv.path);
-        else if (sv && !sv.canceled) _toast("Save failed: " + (sv.error || "unknown"));
+        if (sv && sv.ok) _toast("Saved to " + sv.path, "success");
+        else if (sv && !sv.canceled) _toast("Save failed: " + (sv.error || "unknown"), "error");
       } else {
-        try { await navigator.clipboard.writeText(r.text); _toast("Copied " + format.toUpperCase() + " to clipboard"); }
-        catch (_) { _toast("Could not copy"); }
+        try { await navigator.clipboard.writeText(r.text); _toast("Copied " + format.toUpperCase() + " to clipboard", "success"); }
+        catch (_) { _toast("Could not copy", "error"); }
       }
     }
 
@@ -1472,7 +1472,7 @@ const sections = {
             <div style="max-height:320px;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.5">${strTop || '<span class="muted">none</span>'}</div>
           </section>
         </div>`;
-      out.querySelectorAll(".fx-copy").forEach((b) => { b.onclick = () => { try { navigator.clipboard.writeText(b.dataset.copy); _toast("Copied"); } catch (_) {} }; });
+      out.querySelectorAll(".fx-copy").forEach((b) => { b.onclick = () => { try { navigator.clipboard.writeText(b.dataset.copy); _toast("Copied", "success"); } catch (_) {} }; });
     }
     $("#fx-pick", el).onclick = async () => { const f = await S.openFile(); if (f) { pathIn.value = f; analyze(f); } };
     $("#fx-run", el).onclick = () => analyze(pathIn.value.trim());
@@ -2224,7 +2224,7 @@ ${ollamaLine}`;
     };
     $("#vmList", el).onclick = async (e) => {
       const start = e.target.closest("[data-start]"), con = e.target.closest("[data-console]"), stop = e.target.closest("[data-stop]"), del = e.target.closest("[data-del]"), iso = e.target.closest("[data-iso]");
-      if (start) { const b = start; b.textContent = "starting..."; b.disabled = true; const r = await S.vmStart(b.dataset.start); if (!r.ok) { _toast("Start failed: " + r.error); b.textContent = "Start"; b.disabled = false; return; } await loadList(); openConsole(b.dataset.start); }
+      if (start) { const b = start; b.textContent = "starting..."; b.disabled = true; const r = await S.vmStart(b.dataset.start); if (!r.ok) { _toast("Start failed: " + r.error, "error"); b.textContent = "Start"; b.disabled = false; return; } await loadList(); openConsole(b.dataset.start); }
       else if (con) openConsole(con.dataset.console);
       else if (stop) { await S.vmStop(stop.dataset.stop); if (curConsoleId === stop.dataset.stop) stopVmConsole(); setTimeout(loadList, 1500); }
       else if (iso) { const f = await S.openFile([{ name: "ISO images", extensions: ["iso", "img"] }]); if (f) { await S.vmUpdate(iso.dataset.iso, { iso: f }); loadList(); } }
@@ -2555,8 +2555,8 @@ ${ollamaLine}`;
     async function exportAs(fmt) {
       if (!rows.length) return;
       const text = fmt === "csv" ? (TK.resultsToCsv ? TK.resultsToCsv(rows) : "") : (TK.resultsToJson ? TK.resultsToJson(rows, { target: $$("shost").value.trim() }) : JSON.stringify(rows, null, 2));
-      if (S.auditSave) { const r = await S.auditSave(text, "scan-results." + fmt, fmt); if (r && r.ok) _toast("Saved " + r.path); else if (!(r && r.canceled)) _toast("Export failed" + (r && r.error ? ": " + r.error : "")); }
-      else { navigator.clipboard?.writeText(text); _toast("Copied " + fmt.toUpperCase() + " to clipboard"); }
+      if (S.auditSave) { const r = await S.auditSave(text, "scan-results." + fmt, fmt); if (r && r.ok) _toast("Saved " + r.path, "success"); else if (!(r && r.canceled)) _toast("Export failed" + (r && r.error ? ": " + r.error : ""), "error"); }
+      else { navigator.clipboard?.writeText(text); _toast("Copied " + fmt.toUpperCase() + " to clipboard", "success"); }
     }
     $$("sgo").onclick = run;
     $$("shost").onkeydown = (e) => { if (e.key === "Enter" && !running) run(); };
@@ -4240,7 +4240,7 @@ S.sysinfo().then((s) => { const h = $("#sb-hosttxt"); if (h) h.textContent = s.h
   if (S.onUpdate) S.onUpdate((s) => {
     if (!s) return;
     if (s.phase === "downloading") setBadge("Downloading update… " + (s.percent || 0) + "%", { title: "A new version is downloading in the background" });
-    else if (s.phase === "ready") { setBadge("Update ready — restart to apply", { title: "Click to restart and update now", click: () => S.installUpdate && S.installUpdate() }); _toast && _toast("Update " + (s.version ? "v" + s.version + " " : "") + "downloaded — it installs automatically when you next quit, or click the badge to restart now.", 7000); }
+    else if (s.phase === "ready") { setBadge("Update ready — restart to apply", { title: "Click to restart and update now", click: () => S.installUpdate && S.installUpdate() }); _toast && _toast("Update " + (s.version ? "v" + s.version + " " : "") + "downloaded — it installs automatically when you next quit, or click the badge to restart now.", 7000, "success"); }
   });
   if (S.checkUpdate) S.checkUpdate().then((r) => {
     // An instant hint at launch; the background updater fetches it automatically.
@@ -4268,7 +4268,26 @@ $("#nav").onclick = (e) => { const b = e.target.closest(".nav-item"); if (b) go(
 S.sysinfo().then((s) => { $("#side-foot").textContent = s.hostname + " · " + s.platform; });
 
 // ---- save the exact frame (Ctrl+S): section + typed text, restored on next launch ----
-const _toast = (msg, ms) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in")); setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, ms || 2400); };
+const _toast = (msg, a, b) => {
+  // Flexible args so every existing caller keeps working: _toast(msg),
+  // _toast(msg, ms), _toast(msg, type), _toast(msg, ms, type). `type` colours the
+  // accent (info/success/error/warning) so a failure no longer looks like a win.
+  let ms, type;
+  if (typeof a === "string") { type = a; ms = b; } else { ms = a; type = b; }
+  let stack = document.getElementById("toast-stack");
+  if (!stack) { stack = document.createElement("div"); stack.id = "toast-stack"; document.body.appendChild(stack); }
+  const t = document.createElement("div");
+  t.className = "toast toast-" + (type || "info");
+  t.textContent = msg;
+  t.title = "Click to dismiss";
+  const dismiss = () => { if (t._done) return; t._done = true; clearTimeout(t._t); t.classList.remove("in"); setTimeout(() => t.remove(), 300); };
+  t.onclick = dismiss;
+  while (stack.children.length >= 4) stack.firstElementChild.remove();
+  stack.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("in"));
+  t._t = setTimeout(dismiss, ms || 2400);
+  return t;
+};
 // Promise-based confirm modal (replaces native confirm()). Resolves true/false.
 function dnConfirm(message, opts) {
   opts = opts || {};
@@ -4292,7 +4311,7 @@ function saveFrame() {
   const fields = {};
   page.querySelectorAll("input,textarea,select").forEach((el) => { if (el.id && el.type !== "password" && el.type !== "file" && el.value) fields[el.id] = el.value; });
   try { localStorage.setItem("s_frame", JSON.stringify({ sec: curSec, fields })); } catch (_) {}
-  _toast("Frame saved — you'll resume right here.");
+  _toast("Frame saved — you'll resume right here.", "success");
 }
 document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); saveFrame(); } });
 
