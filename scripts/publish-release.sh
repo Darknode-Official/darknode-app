@@ -67,5 +67,15 @@ upload() {
 upload "$APPIMAGE"
 upload "$DEB"
 [ -f "$SUMS" ] && upload "$SUMS"
+
+# electron-updater feed metadata + blockmaps. electron-builder writes these into
+# dist/ because a publish provider is configured in package.json, and the
+# autonomous updater (lib/auto-update.js) needs the yml present in the release or
+# it finds nothing and stays idle. Upload whichever exist (Linux here; the win/mac
+# equivalents upload too if those artifacts were built into dist/).
+while IFS= read -r meta; do
+  [ -n "$meta" ] && [ -f "$meta" ] && upload "$meta"
+done < <(ls -1 "$ROOT"/dist/latest*.yml "$ROOT"/dist/*.blockmap 2>/dev/null || true)
+
 echo "Done. The app's Update tab will now report v${VER} as the latest."
 echo "Verify a download:  sha256sum -c SHA256SUMS-${VER}.txt   (after placing it beside the artifact)"

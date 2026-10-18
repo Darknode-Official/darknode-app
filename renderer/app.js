@@ -4231,8 +4231,23 @@ document.addEventListener("keydown", (e) => {
 // status bar: host + version, live clock
 S.sysinfo().then((s) => { const h = $("#sb-hosttxt"); if (h) h.textContent = s.hostname + " · " + s.platform; const v = $("#sb-ver"); if (v) v.textContent = "v" + (s.version || ""); });
 (function () { const c = $("#sb-clock"); if (!c) return; const tick = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); c.textContent = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); }; tick(); setInterval(tick, 1000); })();
-// in-app update check
-if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { const sb = $("#sb-ver"); if (sb) { sb.textContent = "v" + r.current + " → v" + r.latest + " available"; sb.classList.add("sb-update"); sb.title = "A newer version is available — open Downloads"; sb.style.cursor = "pointer"; sb.onclick = () => S.openExternal("https://github.com/Darknode-Official/darknode-app/releases/latest"); } _toast && _toast("Update available: v" + r.latest + " — see Downloads", 5000); } }).catch(() => {});
+// in-app updates — fetched automatically in the background (see lib/auto-update.js).
+// The badge reflects live progress and offers an OPTIONAL restart to apply; the
+// update also installs on its own the next time the app quits.
+(function () {
+  const sb = () => $("#sb-ver");
+  const setBadge = (txt, opts) => { const e = sb(); if (!e) return; const o = opts || {}; e.textContent = txt; e.classList.add("sb-update"); e.title = o.title || ""; e.style.cursor = o.click ? "pointer" : ""; e.onclick = o.click || null; };
+  if (S.onUpdate) S.onUpdate((s) => {
+    if (!s) return;
+    if (s.phase === "downloading") setBadge("Downloading update… " + (s.percent || 0) + "%", { title: "A new version is downloading in the background" });
+    else if (s.phase === "ready") { setBadge("Update ready — restart to apply", { title: "Click to restart and update now", click: () => S.installUpdate && S.installUpdate() }); _toast && _toast("Update " + (s.version ? "v" + s.version + " " : "") + "downloaded — it installs automatically when you next quit, or click the badge to restart now.", 7000); }
+  });
+  if (S.checkUpdate) S.checkUpdate().then((r) => {
+    // An instant hint at launch; the background updater fetches it automatically.
+    // Clicking opens the release page as a manual fallback (e.g. .deb or unsigned builds).
+    if (r && r.ok && r.update) setBadge("v" + r.current + " → v" + r.latest, { title: "v" + r.latest + " is downloading automatically — click to open the release page", click: () => S.openExternal("https://github.com/Darknode-Official/darknode-app/releases/latest") });
+  }).catch(() => {});
+})();
 { const pb = $("#palette-btn"); if (pb) pb.onclick = openPalette; }
 // collapsible sidebar (icon rail) with tooltips, remembered
 (function () {

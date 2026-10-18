@@ -89,6 +89,8 @@ contextBridge.exposeInMainWorld("darknode", {
   winMax: () => ipcRenderer.invoke("win:maximize"),
   winClose: () => ipcRenderer.invoke("win:close"),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
+  installUpdate: () => ipcRenderer.invoke("app:installUpdate"),
+  onUpdate: (cb) => ipcRenderer.on("app:update", (_e, s) => { try { cb(s); } catch (_) {} }),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),

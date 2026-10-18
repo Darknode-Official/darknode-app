@@ -229,6 +229,8 @@ app.on("web-contents-created", (_e, contents) => {
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.whenReady().then(createWindow);
+// Autonomous background updates (packaged builds only; see lib/auto-update.js).
+app.whenReady().then(() => { try { require("./lib/auto-update").initAutoUpdate(() => win, app); } catch (_) {} });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -253,6 +255,9 @@ ipcMain.handle("app:checkUpdate", async () => {
     return { ok: true, current: cur, latest, update: cmp(latest, cur) > 0 };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+
+// Apply a downloaded update now (user accepted the optional "restart to update").
+ipcMain.handle("app:installUpdate", () => { try { require("./lib/auto-update").quitAndInstall(); } catch (_) {} return { ok: true }; });
 
 // ---- Native Gmail OAuth (Desktop client: loopback + PKCE) ----
 // A Desktop OAuth client can't keep its secret confidential (it ships in the app),
