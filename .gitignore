@@ -3,5 +3,7 @@ dist/
 .DS_Store
 oauth.config.json
 *.log
-sentinel-cli/
+darknode-cli/
 oauth.config.json
+
+BUILDLOG.md
