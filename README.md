@@ -5,7 +5,7 @@
 # Darknode (desktop app)
 
 The Darknode security console — a cross-platform Electron app: an AI assistant, a
-QEMU VM runner that can **build Darknode OS**, a native port scanner, DNS/WHOIS/TLS
+QEMU VM runner that boots VMs and OS images (incl. Darknode OS), a native port scanner, DNS/WHOIS/TLS
 recon, a code workbench, live terminals, MCP, and enterprise governance.
 
 ## Architecture
@@ -18,7 +18,7 @@ recon, a code workbench, live terminals, MCP, and enterprise governance.
    Main process  (main.js — IPC handlers)
         |
         +-- AI          streaming: Ollama (local) · Claude · OpenAI-compatible
-        +-- VM runner   QEMU + a Darknode OS builder (pick a base, build, boot)
+        +-- VM runner   QEMU: create qcow2 disks + boot an ISO (run Darknode OS or any image)
         +-- Recon       scan · dns · whois · tls · subdomains · fuzz
         +-- Dev         git / github · pty terminals · MCP client
         +-- Governance  usage ledger · compliance bundle
@@ -67,8 +67,9 @@ npm test                       # run the unit/native-path/security test suite
 
 ## Status
 
-Active. The VM runner can build and boot a customized Darknode OS on a chosen base
-(Debian / Ubuntu / Kali) directly from the app.
+Active. The VM runner creates qcow2 disks and boots VMs from a chosen ISO directly
+from the app (including the Darknode OS image built by the darknode-os-distro repo).
+It runs and boots VMs; it does not itself build an OS — that lives in darknode-os-distro/core.
 
 ## What works offline vs online
 
