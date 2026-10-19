@@ -10,7 +10,7 @@
   const te = new TextEncoder(), td = new TextDecoder();
   const bytes = (s) => te.encode(s);
   const hex = (u8) => Array.from(u8).map((b) => b.toString(16).padStart(2, "0")).join("");
-  const fromHex = (s) => new Uint8Array((s.trim().replace(/[^0-9a-fA-F]/g, "").match(/.{1,2}/g) || []).map((h) => parseInt(h, 16)));
+  const fromHex = (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = "0" + h; return new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16))); };
 
   // ---- subtle-crypto digests (SHA family) ----
   async function digest(algo, s) { return hex(new Uint8Array(await crypto.subtle.digest(algo, bytes(s)))); }
@@ -98,7 +98,7 @@
       { id: "jwt-decode", name: "JWT decode", desc: "Decode a JWT's header and payload", run: (s) => { const p = s.trim().split("."); if (p.length < 2) throw new Error("not a JWT (need header.payload.signature)"); const d = (x) => JSON.stringify(JSON.parse(b64dec(x.replace(/-/g, "+").replace(/_/g, "/"))), null, 2); return "HEADER\n" + d(p[0]) + "\n\nPAYLOAD\n" + d(p[1]) + (p[2] ? "\n\nSIGNATURE\n" + p[2] : ""); } },
       { id: "json-format", name: "JSON prettify", desc: "Format/validate JSON", fields: [{ k: "indent", label: "Indent", type: "select", options: [["2", "2 spaces"], ["4", "4 spaces"], ["\t", "Tab"]], def: "2" }], run: (s, o) => JSON.stringify(JSON.parse(s), null, o.indent === "\t" ? "\t" : +o.indent) },
       { id: "json-minify", name: "JSON minify", desc: "Strip whitespace from JSON", run: (s) => JSON.stringify(JSON.parse(s)) },
-      { id: "number-base", name: "Number base convert", desc: "Convert between bin/oct/dec/hex", fields: [{ k: "from", label: "From", type: "select", options: [["dec", "Decimal"], ["hex", "Hex"], ["bin", "Binary"], ["oct", "Octal"]], def: "dec" }, { k: "to", label: "To", type: "select", options: [["hex", "Hex"], ["dec", "Decimal"], ["bin", "Binary"], ["oct", "Octal"]], def: "hex" }], run: (s, o) => { const v = parseInt(s.trim().replace(/^0[xbo]/i, ""), NB[o.from]); if (isNaN(v)) throw new Error("not a valid " + o.from + " number"); return v.toString(NB[o.to]); } },
+      { id: "number-base", name: "Number base convert", desc: "Convert between bin/oct/dec/hex", fields: [{ k: "from", label: "From", type: "select", options: [["dec", "Decimal"], ["hex", "Hex"], ["bin", "Binary"], ["oct", "Octal"]], def: "dec" }, { k: "to", label: "To", type: "select", options: [["hex", "Hex"], ["dec", "Decimal"], ["bin", "Binary"], ["oct", "Octal"]], def: "hex" }], run: (s, o) => { const from = NB[o.from], to = NB[o.to]; let t = s.trim().replace(/^0[xbo]/i, "").toLowerCase(); const neg = t[0] === "-"; if (neg) t = t.slice(1); if (!t) throw new Error("not a valid " + o.from + " number"); const DIG = "0123456789abcdefghijklmnopqrstuvwxyz"; let v = 0n; const B = BigInt(from); for (const ch of t) { const d = DIG.indexOf(ch); if (d < 0 || d >= from) throw new Error("not a valid " + o.from + " number"); v = v * B + BigInt(d); } return (neg ? "-" : "") + v.toString(to); } },
     ]),
     cat("Hashing & Checksums", [
       { id: "md5", name: "MD5", desc: "128-bit MD5 hash", run: (s) => md5(s) },
@@ -154,7 +154,7 @@
       { id: "css-hex-rgb", name: "HEX to RGB", desc: "#rrggbb to rgb()", run: (s) => { const h = s.trim().replace("#", ""); if (!/^[0-9a-fA-F]{6}$/.test(h)) throw new Error("expected #rrggbb"); return "rgb(" + parseInt(h.slice(0, 2), 16) + ", " + parseInt(h.slice(2, 4), 16) + ", " + parseInt(h.slice(4, 6), 16) + ")"; } },
     ]),
     cat("Network & IP", [
-      { id: "ip-to-int", name: "IP to integer", desc: "Dotted IPv4 to a 32-bit int", run: (s) => { const p = s.trim().split("."); if (p.length !== 4 || p.some((x) => +x < 0 || +x > 255 || x === "")) throw new Error("not an IPv4 address"); return String(p.reduce((a, o) => a * 256 + +o, 0)); } },
+      { id: "ip-to-int", name: "IP to integer", desc: "Dotted IPv4 to a 32-bit int", run: (s) => { const p = s.trim().split("."); if (p.length !== 4 || p.some((x) => !/^\d+$/.test(x) || +x > 255)) throw new Error("not an IPv4 address"); return String(p.reduce((a, o) => a * 256 + +o, 0)); } },
       { id: "int-to-ip", name: "Integer to IP", desc: "32-bit int to dotted IPv4", run: (s) => { const n = +s.trim(); if (isNaN(n) || n < 0 || n > 4294967295) throw new Error("out of IPv4 range"); return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join("."); } },
       { id: "cidr", name: "CIDR calculator", desc: "Network, broadcast, host range", run: (s) => cidrCalc(s) },
       { id: "netmask", name: "Prefix to netmask", desc: "/24 to 255.255.255.0", run: (s) => { const p = +s.trim().replace("/", ""); if (isNaN(p) || p < 0 || p > 32) throw new Error("prefix must be 0-32"); const m = p === 0 ? 0 : (0xffffffff << (32 - p)) >>> 0; return [(m >>> 24) & 255, (m >>> 16) & 255, (m >>> 8) & 255, m & 255].join(".") + "   (" + p + " bits, " + (p === 32 ? 1 : Math.pow(2, 32 - p)) + " addresses)"; } },
