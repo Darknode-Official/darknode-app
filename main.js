@@ -11,6 +11,7 @@ const net = require("net");
 const tls = require("tls");
 const dns = require("dns").promises;
 const fs = require("fs");
+const { fileURLToPath } = require("url");
 // AI + enterprise governance (vendored from the Darknode CLI)
 const { toAnthropicBody, anthropicDelta, usageOf } = require("./lib/anthropic");
 const { resolveOperator } = require("./lib/identity");
@@ -38,6 +39,12 @@ const { createVault, electronBackend } = require("./lib/secret/vault");
     }));
   }
 })();
+
+// Keep a stray throw/rejection from a PTY, QEMU or streaming socket from taking
+// down the whole main process and silently losing all in-flight work. The
+// console above redacts, so logging here can't leak a secret.
+process.on("uncaughtException", (e) => console.error("[darknode] uncaught exception:", e));
+process.on("unhandledRejection", (e) => console.error("[darknode] unhandled rejection:", e));
 
 const RESULTS_DIR = path.join(os.homedir(), "darknode-results");
 
@@ -134,9 +141,14 @@ function createWindow() {
   win.on("unmaximize", () => { win.webContents.send("win:state", false); saveWinStateSoon(); });
   if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
   if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
-  // Security: prevent the main renderer from navigating away from the local app.
+  // Security: keep the main renderer pinned to the app's own bundled files.
+  // Any non-file URL, or a file:// path outside renderer/, is blocked — so a
+  // stray link can't escape the shell into file:///etc/passwd etc.
+  const rendererDir = path.join(__dirname, "renderer");
   win.webContents.on("will-navigate", (e, url) => {
-    if (!url.startsWith("file://")) e.preventDefault();
+    let ok = false;
+    try { const p = fileURLToPath(url); ok = p === path.join(rendererDir, "index.html") || p.startsWith(rendererDir + path.sep); } catch (_) {}
+    if (!ok) e.preventDefault();
   });
   // Security: block new-window requests from the renderer (links should use openExternal).
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -172,7 +184,12 @@ ipcMain.handle("app:checkUpdate", async () => {
     let r; try { r = await fetch("https://api.github.com/repos/Darknode-Official/darknode-app/releases/latest", { headers: { "User-Agent": "Darknode" }, signal: ctrl.signal }); } finally { clearTimeout(to); }
     if (!r.ok) return { ok: false };
     const d = await r.json();
-    const vers = (d.assets || []).map((a) => (a.name.match(/(\d+\.\d+\.\d+)/) || [])[1]).filter(Boolean).sort(cmp);
+    const vers = (d.assets || []).map((a) => (a.name.match(/(\d+\.\d+\.\d+)/) || [])[1]).filter(Boolean);
+    // Also take the release tag itself (e.g. v1.2.3) so a release whose assets
+    // aren't version-named — or aren't uploaded yet — still reports correctly.
+    const tag = (String(d.tag_name || "").match(/(\d+\.\d+\.\d+)/) || [])[1];
+    if (tag) vers.push(tag);
+    vers.sort(cmp);
     const latest = vers.length ? vers[vers.length - 1] : cur;
     return { ok: true, current: cur, latest, update: cmp(latest, cur) > 0 };
   } catch (e) { return { ok: false, error: e.message }; }
@@ -893,7 +910,10 @@ ipcMain.handle("git:clone", async (_e, { url, token }) => {
   if (!/^https:\/\//i.test(url)) return { ok: false, error: "use an https repo URL (https://github.com/owner/repo)" };
   try {
     await fs.promises.mkdir(REPOS_DIR, { recursive: true });
-    const name = (url.split("/").pop() || "repo").replace(/\.git$/, "");
+    // Sanitize the derived folder name so a crafted URL (e.g. trailing "..")
+    // can't resolve the clone target outside REPOS_DIR.
+    let name = (url.split("/").pop() || "repo").replace(/\.git$/, "").replace(/[^\w.-]/g, "");
+    if (!name || name === "." || name === "..") name = "repo";
     const dir = path.join(REPOS_DIR, name);
     try { await fs.promises.access(dir); return { ok: false, error: "folder already exists — open it instead: " + dir }; } catch (_) {}
     await git(["clone", authUrl(url, token), dir]);
@@ -1173,7 +1193,15 @@ ipcMain.handle("vm:create", async (_e, { name, memMB, cpus, diskGB, iso }) => {
 });
 ipcMain.handle("vm:update", (_e, { id, patch }) => {
   const vms = vmReadStore(); const v = vms.find((x) => x.id === id); if (!v) return { ok: false, error: "no such vm" };
-  Object.assign(v, patch || {}); vmWriteStore(vms); return { ok: true, vm: v };
+  // Only metadata is renderer-patchable. Never let a patch rewrite `disk` (it
+  // becomes the QEMU -drive file=), `id` or `created`. memMB/cpus are clamped
+  // to the same bounds as creation.
+  const p = patch || {};
+  if (typeof p.name === "string") v.name = p.name;
+  if ("iso" in p) v.iso = String(p.iso || "");
+  if (p.memMB != null) v.memMB = Math.max(256, Math.min(65536, parseInt(p.memMB, 10) || v.memMB));
+  if (p.cpus != null) v.cpus = Math.max(1, Math.min(32, parseInt(p.cpus, 10) || v.cpus));
+  vmWriteStore(vms); return { ok: true, vm: v };
 });
 ipcMain.handle("vm:delete", async (_e, { id, deleteDisk }) => {
   if (vmProcs.has(id)) { try { vmProcs.get(id).proc.kill("SIGKILL"); } catch (_) {} vmProcs.delete(id); }
