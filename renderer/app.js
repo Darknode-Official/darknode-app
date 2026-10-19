@@ -645,7 +645,7 @@ function builderCard(host, cfg) {
   const gen = () => { out.textContent = cfg.build(vals()); return out.textContent; };
   el.querySelectorAll("[data-k]").forEach((i) => { i.oninput = gen; i.onchange = gen; });
   $(".pb-run", el).onclick = () => { const c = gen(); if (c) go("runner", { cmd: c }); };
-  $(".pb-copy", el).onclick = (e) => { const c = gen(); navigator.clipboard?.writeText(c).then(() => { e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200); }); };
+  $(".pb-copy", el).onclick = (e) => { const c = gen(); navigator.clipboard?.writeText(c).then(() => { e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200); }).catch(() => _toast("Copy failed")); };
   gen(); host.appendChild(el);
 }
 
@@ -1315,7 +1315,7 @@ const sections = {
       input.value = ""; grow(); input.focus();
     };
     // Copy button on streamed code blocks.
-    thread.onclick = (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const code = b.parentElement.querySelector("code"); if (code) navigator.clipboard?.writeText(code.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); }); };
+    thread.onclick = (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const code = b.parentElement.querySelector("code"); if (code) navigator.clipboard?.writeText(code.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); }).catch(() => _toast("Copy failed")); };
     setTimeout(() => input.focus(), 60);
   },
 
@@ -1536,16 +1536,19 @@ const sections = {
       </div>`;
     const openDl = () => S.openExternal("https://github.com/Darknode-Official/darknode-app/releases/latest");
     const run = async () => {
-      const st = $("#up-status", el), get = $("#up-get", el);
+      const st = $("#up-status", el), get = $("#up-get", el), chk = $("#up-check", el);
+      if (chk) chk.disabled = true;
       st.innerHTML = `<span class="muted">checking…</span>`; get.style.display = "none";
-      try { const s = await S.sysinfo(); $("#up-cur", el).textContent = "v" + (s.version || "?"); } catch (_) {}
       try {
-        const r = await S.checkUpdate();
-        if (!r || !r.ok) { $("#up-latest", el).textContent = "?"; st.innerHTML = `<span class="muted">Couldn't reach the update server — check your connection, or open Downloads.</span>`; get.style.display = ""; get.textContent = "Open Downloads"; get.onclick = openDl; return; }
-        $("#up-cur", el).textContent = "v" + r.current; $("#up-latest", el).textContent = "v" + r.latest;
-        if (r.update) { st.innerHTML = `<span style="color:var(--acc);font-weight:600">● Update available — v${esc(r.latest)} is newer than your v${esc(r.current)}.</span>`; get.style.display = ""; get.textContent = "Download v" + r.latest; get.onclick = openDl; }
-        else { st.innerHTML = `<span style="color:var(--ok,#3fb950);font-weight:600">✓ You're on the latest version.</span>`; }
-      } catch (e) { st.textContent = "check failed: " + (e && e.message || e); }
+        try { const s = await S.sysinfo(); $("#up-cur", el).textContent = "v" + (s.version || "?"); } catch (_) {}
+        try {
+          const r = await S.checkUpdate();
+          if (!r || !r.ok) { $("#up-latest", el).textContent = "?"; st.innerHTML = `<span class="muted">Couldn't reach the update server — check your connection, or open Downloads.</span>`; get.style.display = ""; get.textContent = "Open Downloads"; get.onclick = openDl; return; }
+          $("#up-cur", el).textContent = "v" + r.current; $("#up-latest", el).textContent = "v" + r.latest;
+          if (r.update) { st.innerHTML = `<span style="color:var(--acc);font-weight:600">● Update available — v${esc(r.latest)} is newer than your v${esc(r.current)}.</span>`; get.style.display = ""; get.textContent = "Download v" + r.latest; get.onclick = openDl; }
+          else { st.innerHTML = `<span style="color:var(--ok,#3fb950);font-weight:600">✓ You're on the latest version.</span>`; }
+        } catch (e) { st.textContent = "check failed: " + (e && e.message || e); }
+      } finally { if (chk) chk.disabled = false; }
     };
     $("#up-check", el).onclick = run; run();
   },
@@ -1906,7 +1909,7 @@ ${ollamaLine}`;
     if (typeof Terminal === "undefined") { st.textContent = "Terminal component failed to load."; return; }
     const sessions = []; let counter = 0;
 
-    const drawTabs = () => { tabsEl.innerHTML = sessions.map((s, i) => `<button class="term-tab${s.active ? " active" : ""}" data-i="${i}">${esc(s.label)}<span class="term-x" data-x="${i}">&times;</span></button>`).join(""); };
+    const drawTabs = () => { tabsEl.innerHTML = sessions.map((s, i) => `<button class="term-tab${s.active ? " active" : ""}" data-i="${i}">${esc(s.label)}<span class="term-x" data-x="${i}" title="Close tab" aria-label="Close tab" role="button">&times;</span></button>`).join(""); };
     const activate = (i) => {
       sessions.forEach((s, j) => { s.active = j === i; s.host.style.display = s.active ? "block" : "none"; });
       drawTabs();
@@ -1985,7 +1988,7 @@ ${ollamaLine}`;
         };
       }
       const rt = $(".runterm", panel); if (rt && !rt.disabled) rt.onclick = runIt;
-      const cc = $(".copyc", panel); if (cc) cc.onclick = (e) => navigator.clipboard?.writeText($(".f", panel).value).then(() => { e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy"), 1200); });
+      const cc = $(".copyc", panel); if (cc) cc.onclick = (e) => navigator.clipboard?.writeText($(".f", panel).value).then(() => { e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy"), 1200); }).catch(() => _toast("Copy failed"));
     }
     // pre-flag installed/needs-config badges without blocking
     $("#cat", el).querySelectorAll(".item").forEach((item) => { const t = TOOLS.find((x) => x.id === item.dataset.id); S.which(bin(t)).then((w) => { const b = $("[data-badge]", item); if (b) { b.textContent = w.found ? "ready" : "configure"; b.className = "tool-badge " + (w.found ? "on" : "off"); } }); });
@@ -2337,11 +2340,11 @@ ${ollamaLine}`;
       <div id="wt-viewer" hidden style="display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:420px">
         <div class="run-bar" style="gap:8px;padding:4px 0 8px;align-items:center">
           <button class="btn ghost sm" id="wt-back">&larr; All tools</button>
-          <button class="btn ghost sm" id="wt-nav-back" title="Back (Ctrl+[)" disabled>&#9664;</button>
-          <button class="btn ghost sm" id="wt-nav-fwd" title="Forward (Ctrl+])" disabled>&#9654;</button>
+          <button class="btn ghost sm" id="wt-nav-back" title="Back (Ctrl+[)" aria-label="Back" disabled>&#9664;</button>
+          <button class="btn ghost sm" id="wt-nav-fwd" title="Forward (Ctrl+])" aria-label="Forward" disabled>&#9654;</button>
           <span class="mono" id="wt-title" style="flex:1;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-          <button class="btn ghost sm" id="wt-reload" title="Reload">&#10227;</button>
-          <button class="btn ghost sm" id="wt-ext" title="Open in system browser">&#8599;</button>
+          <button class="btn ghost sm" id="wt-reload" title="Reload" aria-label="Reload">&#10227;</button>
+          <button class="btn ghost sm" id="wt-ext" title="Open in system browser" aria-label="Open in system browser">&#8599;</button>
         </div>
         <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></webview>
       </div>`;
@@ -2373,7 +2376,7 @@ ${ollamaLine}`;
     $("#wt-nt-run", el).onclick = runNative;
     ntIn.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runNative(); } });
     ntFields.addEventListener("change", () => { if (curTool && ntIn.value) runNative(); });
-    $("#wt-nt-copy", el).onclick = (e) => { navigator.clipboard?.writeText(ntOut.textContent); e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy output"), 1200); };
+    $("#wt-nt-copy", el).onclick = (e) => { navigator.clipboard?.writeText(ntOut.textContent)?.catch(() => _toast("Copy failed")); e.target.textContent = "copied"; setTimeout(() => (e.target.textContent = "copy output"), 1200); };
     $("#wt-nt-back", el).onclick = () => { runner.hidden = true; cat.hidden = false; curTool = null; };
     nativeGrid.onclick = (e) => { const b = e.target.closest("[data-nt]"); if (b) openNative(b.dataset.nt); };
 
@@ -2756,14 +2759,17 @@ ${ollamaLine}`;
       const headers = {};
       $("#hh", el).value.split("\n").forEach((ln) => { const i = ln.indexOf(":"); if (i > 0) headers[ln.slice(0, i).trim()] = ln.slice(i + 1).trim(); });
       const body = $("#hb", el).value;
-      const stat = $("#hstat", el), out = $("#hout", el);
+      const stat = $("#hstat", el), out = $("#hout", el), btn = $("#hsend", el);
+      btn.disabled = true;
       stat.textContent = "sending..."; stat.className = "run-status"; out.textContent = "";
-      const r = await S.httpReq({ method, url: u, headers, body });
-      if (!r.ok) { stat.className = "run-status bad"; stat.textContent = "error: " + r.error + " (" + r.ms + "ms)"; return; }
-      stat.className = "run-status " + (r.status < 400 ? "ok" : "bad");
-      stat.textContent = `${r.status} ${r.statusText} · ${r.ms}ms` + (r.url && r.url !== u ? " · -> " + r.url : "");
-      const hdr = Object.entries(r.headers).map(([k, v]) => k + ": " + v).join("\n");
-      out.textContent = hdr + "\n\n" + r.body;
+      try {
+        const r = await S.httpReq({ method, url: u, headers, body });
+        if (!r.ok) { stat.className = "run-status bad"; stat.textContent = "error: " + r.error + " (" + r.ms + "ms)"; return; }
+        stat.className = "run-status " + (r.status < 400 ? "ok" : "bad");
+        stat.textContent = `${r.status} ${r.statusText} · ${r.ms}ms` + (r.url && r.url !== u ? " · -> " + r.url : "");
+        const hdr = Object.entries(r.headers).map(([k, v]) => k + ": " + v).join("\n");
+        out.textContent = hdr + "\n\n" + r.body;
+      } finally { btn.disabled = false; }
     };
     $("#hsend", el).onclick = send;
     $("#hu", el).onkeydown = (e) => { if (e.key === "Enter") send(); };
@@ -2911,12 +2917,12 @@ ${ollamaLine}`;
       const host = $("#flist", el);
       if (!findings.length) { host.innerHTML = `<p class="muted">No findings yet.</p>`; return; }
       host.innerHTML = findings.map((f, i) => `<div class="card" style="max-width:820px"><div class="run-bar" style="justify-content:space-between"><strong class="${sev[f.sev] || ""}">[${esc(f.sev)}] ${esc(f.title)}</strong><button class="btn ghost sm" data-del="${i}">delete</button></div>${f.detail ? `<p class="muted" style="white-space:pre-wrap;margin:6px 0 0">${esc(f.detail)}</p>` : ""}</div>`).join("");
-      host.querySelectorAll("[data-del]").forEach((b) => (b.onclick = () => { findings.splice(+b.dataset.del, 1); save(); draw(); }));
+      host.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (!(await dnConfirm("Delete this finding?", { confirmText: "Delete", danger: true }))) return; findings.splice(+b.dataset.del, 1); save(); draw(); }));
     };
     $("#fadd", el).onclick = () => { const t = $("#ft", el).value.trim(); if (!t) return; findings.unshift({ title: t, sev: $("#fs", el).value, detail: $("#fd", el).value.trim() }); save(); $("#ft", el).value = ""; $("#fd", el).value = ""; draw(); };
     $("#fexport", el).onclick = (e) => {
       const md = `# Findings - ${key}\n\n` + (nt.value ? `## Notes\n\n${nt.value}\n\n` : "") + "## Findings\n\n" + (findings.length ? findings.map((f) => `### [${f.sev}] ${f.title}\n\n${f.detail || "_no detail_"}\n`).join("\n") : "_none_\n");
-      navigator.clipboard?.writeText(md); e.target.textContent = "copied markdown"; setTimeout(() => (e.target.textContent = "Export as Markdown"), 1400);
+      navigator.clipboard?.writeText(md)?.catch(() => _toast("Copy failed")); e.target.textContent = "copied markdown"; setTimeout(() => (e.target.textContent = "Export as Markdown"), 1400);
     };
     draw();
   },
@@ -3115,7 +3121,7 @@ ${ollamaLine}`;
     const loadRuns = () => { try { return JSON.parse(localStorage.getItem(RUNS_KEY)) || []; } catch (_) { return []; } };
     function drawRuns() {
       const runs = loadRuns(), h = $("#agruns", el); if (!h) return;
-      h.innerHTML = runs.length ? `<div class="lbl" style="margin-top:20px">Recent runs</div>` + runs.map((r, i) => `<div class="agrun-row"><button class="agrun-goal" data-run="${i}" title="Re-use this goal">${esc(r.goal.slice(0, 96))}</button><span class="agrun-meta muted">${r.steps} steps</span><button class="agrun-x" data-rm="${i}" title="remove">&times;</button></div>`).join("") : "";
+      h.innerHTML = runs.length ? `<div class="lbl" style="margin-top:20px">Recent runs</div>` + runs.map((r, i) => `<div class="agrun-row"><button class="agrun-goal" data-run="${i}" title="Re-use this goal">${esc(r.goal.slice(0, 96))}</button><span class="agrun-meta muted">${r.steps} steps</span><button class="agrun-x" data-rm="${i}" title="Remove run" aria-label="Remove run">&times;</button></div>`).join("") : "";
     }
     function saveRun(summary, steps, goal) { let runs = loadRuns(); runs.unshift({ goal: goal || "", summary: (summary || "").slice(0, 400), steps: steps || 0, ts: Date.now() }); runs = runs.slice(0, 20); try { localStorage.setItem(RUNS_KEY, JSON.stringify(runs)); } catch (_) {} drawRuns(); }
     $("#agruns", el).onclick = (e) => {
@@ -4224,8 +4230,8 @@ const SHORTCUTS = [
   [["Ctrl", "B"], "Collapse / expand the sidebar"],
   [["Ctrl", "["], "Browser: back"],
   [["Ctrl", "]"], "Browser: forward"],
-  [["Ctrl", "Enter"], "Run the agent (in the Agent goal box)"],
-  [["Enter"], "Send (in AI / most inputs)"],
+  [["Enter"], "Send / run the agent (in AI and the Agent goal box)"],
+  [["Shift", "Enter"], "Newline in the Agent goal / message inputs"],
   [["Ctrl", "+"], "Zoom in"],
   [["Ctrl", "−"], "Zoom out"],
   [["Ctrl", "0"], "Reset zoom"],
