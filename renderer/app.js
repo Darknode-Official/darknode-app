@@ -4208,8 +4208,13 @@ document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && (e
 const SHORTCUTS = [
   [["Ctrl", "K"], "Command palette — jump anywhere"],
   [["Ctrl", "S"], "Save the exact frame (resume where you left off)"],
+  [["Ctrl", "B"], "Collapse / expand the sidebar"],
   [["Ctrl", "Enter"], "Run the agent (in the Agent goal box)"],
   [["Enter"], "Send (in AI / most inputs)"],
+  [["Ctrl", "+"], "Zoom in"],
+  [["Ctrl", "−"], "Zoom out"],
+  [["Ctrl", "0"], "Reset zoom"],
+  [["Double-click titlebar"], "Maximize / restore the window"],
   [["?"], "Show this shortcuts help"],
   [["Esc"], "Close dialogs / palette / this help"],
 ];
@@ -4223,6 +4228,7 @@ function toggleShortcuts() {
 document.addEventListener("keydown", (e) => {
   const tag = (e.target && e.target.tagName) || "";
   if (e.key === "?" && !/INPUT|TEXTAREA|SELECT/.test(tag)) { e.preventDefault(); toggleShortcuts(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); const t = document.getElementById("sidebar-toggle"); if (t) t.click(); }
   else if (e.key === "Escape") { const k = document.getElementById("kbdov"); if (k) k.remove(); }
 });
 
@@ -4247,6 +4253,7 @@ if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { co
   if (mn) mn.onclick = () => S.winMin();
   if (mx) mx.onclick = () => S.winMax();
   if (cl) cl.onclick = () => S.winClose();
+  const dr = document.querySelector(".tb-drag"); if (dr) dr.addEventListener("dblclick", () => S.winMax()); // double-click the titlebar to maximize/restore, matching native windows
   if (S.onWinState) S.onWinState((max) => { document.body.classList.toggle("win-max", !!max); }); }
 $("#nav").onclick = (e) => { const b = e.target.closest(".nav-item"); if (b) go(b.dataset.sec); };
 { const cr = $("#crumbs"); if (cr) cr.onclick = (e) => { const b = e.target.closest("[data-crumb]"); if (b) go(b.dataset.crumb); }; }
