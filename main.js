@@ -1,7 +1,7 @@
 // Darknode desktop - Electron main process. Runs shell commands (streamed),
 // checks installed tools, and proxies local Ollama. Renderer has no Node access
 // (contextIsolation) and talks only through the preload bridge.
-const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, screen } = require("electron");
 const { spawn, execFile } = require("child_process");
 const os = require("os");
 const path = require("path");
@@ -50,11 +50,40 @@ let win;
 const procs = new Map();
 const ptys = new Map();
 let ptySeq = 0;
+let _zoom = 0; // persisted UI zoom level (webContents.setZoomLevel units)
+
+// --- window state (QoL): remember size/position/maximized/zoom across launches ---
+// A tiny JSON file in userData, written debounced on resize/move and on close.
+const winStatePath = () => path.join(govCwd(), "window-state.json");
+function loadWinState() {
+  try { const s = JSON.parse(fs.readFileSync(winStatePath(), "utf8")); return (s && typeof s === "object") ? s : {}; } catch (_) { return {}; }
+}
+let _saveT = null;
+function saveWinState() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    const b = win.getNormalBounds ? win.getNormalBounds() : win.getBounds(); // un-maximized bounds, so restore returns to the real size
+    fs.mkdirSync(path.dirname(winStatePath()), { recursive: true });
+    fs.writeFileSync(winStatePath(), JSON.stringify({ width: b.width, height: b.height, x: b.x, y: b.y, maximized: win.isMaximized(), zoom: _zoom }));
+  } catch (_) {}
+}
+function saveWinStateSoon() { clearTimeout(_saveT); _saveT = setTimeout(saveWinState, 400); }
+// A saved position is only reused if it still lands on a connected display, so a
+// window never restores off-screen after a monitor is unplugged.
+function onScreen(x, y, w, h) {
+  try {
+    const a = screen.getDisplayMatching({ x, y, width: w, height: h }).workArea;
+    return x + w > a.x + 40 && y + h > a.y + 40 && x < a.x + a.width - 40 && y < a.y + a.height - 40;
+  } catch (_) { return false; }
+}
 
 function createWindow() {
-  win = new BrowserWindow({
+  const st = loadWinState();
+  _zoom = Number.isFinite(st.zoom) ? st.zoom : 0;
+  const opts = {
     width: 1300, height: 840, minWidth: 900, minHeight: 600,
     backgroundColor: "#06080f",
+    show: false,          // show on ready-to-show once painted, so there is no blank/flash on launch
     icon: path.join(__dirname, "renderer", "icon.png"),
     frame: false,
     webPreferences: {
@@ -64,10 +93,28 @@ function createWindow() {
       sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
       webviewTag: true,   // enables the built-in Browser section (<webview>)
     },
-  });
+  };
+  if (Number.isFinite(st.width) && st.width >= opts.minWidth) opts.width = Math.round(st.width);
+  if (Number.isFinite(st.height) && st.height >= opts.minHeight) opts.height = Math.round(st.height);
+  if (Number.isFinite(st.x) && Number.isFinite(st.y) && onScreen(st.x, st.y, opts.width, opts.height)) { opts.x = Math.round(st.x); opts.y = Math.round(st.y); }
+  win = new BrowserWindow(opts);
   win.setMenuBarVisibility(false);
-  win.on("maximize", () => win.webContents.send("win:state", true));
-  win.on("unmaximize", () => win.webContents.send("win:state", false));
+  win.once("ready-to-show", () => { if (st.maximized) win.maximize(); win.show(); });
+  win.on("resize", saveWinStateSoon);
+  win.on("move", saveWinStateSoon);
+  win.on("close", saveWinState);
+  // Standard zoom chords (Ctrl/Cmd +/-/0), handled here because the menu bar is
+  // hidden so the default zoom roles never register. Persisted with window state.
+  win.webContents.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta)) return;
+    const k = input.key, code = input.code;
+    if (k === "=" || k === "+" || code === "NumpadAdd") { _zoom = Math.min(_zoom + 0.5, 5); win.webContents.setZoomLevel(_zoom); e.preventDefault(); saveWinStateSoon(); }
+    else if (k === "-" || k === "_" || code === "NumpadSubtract") { _zoom = Math.max(_zoom - 0.5, -3); win.webContents.setZoomLevel(_zoom); e.preventDefault(); saveWinStateSoon(); }
+    else if (k === "0" || code === "Numpad0") { _zoom = 0; win.webContents.setZoomLevel(0); e.preventDefault(); saveWinStateSoon(); }
+  });
+  win.webContents.on("did-finish-load", () => { try { win.webContents.setZoomLevel(_zoom); } catch (_) {} });
+  win.on("maximize", () => { win.webContents.send("win:state", true); saveWinStateSoon(); });
+  win.on("unmaximize", () => { win.webContents.send("win:state", false); saveWinStateSoon(); });
   if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
   if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
   // Security: prevent the main renderer from navigating away from the local app.
