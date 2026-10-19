@@ -4254,7 +4254,14 @@ if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { co
   if (mx) mx.onclick = () => S.winMax();
   if (cl) cl.onclick = () => S.winClose();
   const dr = document.querySelector(".tb-drag"); if (dr) dr.addEventListener("dblclick", () => S.winMax()); // double-click the titlebar to maximize/restore, matching native windows
-  if (S.onWinState) S.onWinState((max) => { document.body.classList.toggle("win-max", !!max); }); }
+  if (S.onWinState) S.onWinState((max) => { document.body.classList.toggle("win-max", !!max); });
+  // Confirm before closing while a command / AI stream / agent run is still going
+  // (main prevents the close and asks us). "Close anyway" calls closeNow().
+  if (S.onConfirmClose) { let closing = false; S.onConfirmClose(async () => {
+    if (closing) return; closing = true;
+    const ok = await dnConfirm("A task is still running. Close Darknode anyway? Any in-progress agent run or command will be stopped.", { confirmText: "Close anyway", cancelText: "Keep running", danger: true });
+    closing = false; if (ok && S.closeNow) S.closeNow();
+  }); } }
 $("#nav").onclick = (e) => { const b = e.target.closest(".nav-item"); if (b) go(b.dataset.sec); };
 { const cr = $("#crumbs"); if (cr) cr.onclick = (e) => { const b = e.target.closest("[data-crumb]"); if (b) go(b.dataset.crumb); }; }
 S.sysinfo().then((s) => { $("#side-foot").textContent = s.hostname + " · " + s.platform; });

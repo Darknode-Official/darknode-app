@@ -51,6 +51,15 @@ const procs = new Map();
 const ptys = new Map();
 let ptySeq = 0;
 let _zoom = 0; // persisted UI zoom level (webContents.setZoomLevel units)
+let _forceClose = false; // set once the user has confirmed closing with work in flight
+let _agentExec = 0; // in-flight agent:exec tool commands (no shared map, so counted)
+
+// Any in-flight work the user would lose by quitting: a running command, an AI
+// stream, or an agent tool command. An open terminal shell (in `ptys`) is expected
+// and deliberately does not count. Used to confirm-before-close.
+function workInFlight() {
+  return procs.size > 0 || streamReqs.size > 0 || claudeReqs.size > 0 || apiReqs.size > 0 || daiReqs.size > 0 || _agentExec > 0;
+}
 
 // --- window state (QoL): remember size/position/maximized/zoom across launches ---
 // A tiny JSON file in userData, written debounced on resize/move and on close.
@@ -103,6 +112,14 @@ function createWindow() {
   win.on("resize", saveWinStateSoon);
   win.on("move", saveWinStateSoon);
   win.on("close", saveWinState);
+  // Confirm before closing while a command / AI stream / agent run is in flight, so
+  // a stray click on X does not silently kill in-progress work. The renderer shows
+  // the confirm (no native dialog); on "close anyway" it calls win:close-now.
+  win.on("close", (e) => {
+    if (_forceClose || !workInFlight()) return;
+    e.preventDefault();
+    try { win.webContents.send("app:confirm-close"); } catch (_) {}
+  });
   // Standard zoom chords (Ctrl/Cmd +/-/0), handled here because the menu bar is
   // hidden so the default zoom roles never register. Persisted with window state.
   win.webContents.on("before-input-event", (e, input) => {
@@ -273,10 +290,11 @@ ipcMain.handle("kill", (_e, id) => { const p = procs.get(id); if (p) { try { p.k
 // echoed by the tty, so it never lands in the captured output. Falls back to a plain pipe
 // if node-pty is unavailable.
 ipcMain.handle("agent:exec", (_e, { command, cwd, timeout, autopass }) => new Promise((res) => {
+  _agentExec++;
   const workdir = cwd || os.homedir();
   const cap = 50000;
   let out = "", killed = false, settled = false, answers = 0, to;
-  const finish = (v) => { if (settled) return; settled = true; clearTimeout(to); res(v); };
+  const finish = (v) => { if (settled) return; settled = true; _agentExec = Math.max(0, _agentExec - 1); clearTimeout(to); res(v); };
   // Strip ANSI/OSC escapes + stray control chars so the model sees clean text.
   const clean = (s) => s
     .replace(/\x1B\][\s\S]*?(?:\x07|\x1B\\)/g, "")
@@ -665,6 +683,7 @@ ipcMain.handle("openExternal", (_e, url) => {
 ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
 ipcMain.handle("win:maximize", () => { if (!win) return false; win.isMaximized() ? win.unmaximize() : win.maximize(); return win.isMaximized(); });
 ipcMain.handle("win:close", () => { if (win) win.close(); });
+ipcMain.handle("win:close-now", () => { _forceClose = true; if (win) win.close(); }); // user confirmed closing with work in flight
 
 // ---- CVE search (NVD) + CISA KEV enrichment ----
 // The KEV catalog is fetched once per process and cached; it flags which of the

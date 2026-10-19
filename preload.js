@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("darknode", {
   winMin: () => ipcRenderer.invoke("win:minimize"),
   winMax: () => ipcRenderer.invoke("win:maximize"),
   winClose: () => ipcRenderer.invoke("win:close"),
+  closeNow: () => ipcRenderer.invoke("win:close-now"),
+  onConfirmClose: (cb) => ipcRenderer.on("app:confirm-close", () => cb()),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
