@@ -2337,11 +2337,13 @@ ${ollamaLine}`;
       <div id="wt-viewer" hidden style="display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:420px">
         <div class="run-bar" style="gap:8px;padding:4px 0 8px;align-items:center">
           <button class="btn ghost sm" id="wt-back">&larr; All tools</button>
+          <button class="btn ghost sm" id="wt-nav-back" title="Back (Ctrl+[)" disabled>&#9664;</button>
+          <button class="btn ghost sm" id="wt-nav-fwd" title="Forward (Ctrl+])" disabled>&#9654;</button>
           <span class="mono" id="wt-title" style="flex:1;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
           <button class="btn ghost sm" id="wt-reload" title="Reload">&#10227;</button>
           <button class="btn ghost sm" id="wt-ext" title="Open in system browser">&#8599;</button>
         </div>
-        <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:#fff"></webview>
+        <webview id="wt-view" partition="persist:dnweb" allowpopups style="flex:1;width:100%;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></webview>
       </div>`;
     const cat = $("#wt-catalog", el), viewer = $("#wt-viewer", el), runner = $("#wt-runner", el), wv = $("#wt-view", el), title = $("#wt-title", el);
     const nativeGrid = $("#wt-native-grid", el), webGrid = $("#wt-web-grid", el), search = $("#wt-search", el), tabs = $("#wt-tabs", el);
@@ -2384,6 +2386,17 @@ ${ollamaLine}`;
     $("#wt-back", el).onclick = () => { viewer.hidden = true; cat.hidden = false; try { wv.loadURL ? wv.loadURL("about:blank") : (wv.src = "about:blank"); } catch (_) {} };
     $("#wt-reload", el).onclick = () => { try { wv.reload(); } catch (_) {} };
     $("#wt-ext", el).onclick = () => { try { S.openExternal(wv.getURL()); } catch (_) {} };
+    // ---- in-browser history (back / forward) ----
+    // <webview> exposes goBack/goForward/canGo* directly in the renderer (DOM API, no
+    // Node); mirrors the reload/ext pattern. Buttons stay enabled only when a move is
+    // possible; Ctrl/Cmd+[ and ] are wired in the global key handler.
+    const navBack = $("#wt-nav-back", el), navFwd = $("#wt-nav-fwd", el);
+    const syncNav = () => { try { navBack.disabled = !wv.canGoBack(); navFwd.disabled = !wv.canGoForward(); } catch (_) {} };
+    navBack.onclick = () => { try { if (wv.canGoBack()) wv.goBack(); } catch (_) {} };
+    navFwd.onclick = () => { try { if (wv.canGoForward()) wv.goForward(); } catch (_) {} };
+    wv.addEventListener("did-navigate", syncNav);
+    wv.addEventListener("did-navigate-in-page", syncNav);
+    wv.addEventListener("did-stop-loading", syncNav);
 
     // ---- search (scoped to the active tab) ----
     function applyFilter() {
@@ -4209,6 +4222,8 @@ const SHORTCUTS = [
   [["Ctrl", "K"], "Command palette — jump anywhere"],
   [["Ctrl", "S"], "Save the exact frame (resume where you left off)"],
   [["Ctrl", "B"], "Collapse / expand the sidebar"],
+  [["Ctrl", "["], "Browser: back"],
+  [["Ctrl", "]"], "Browser: forward"],
   [["Ctrl", "Enter"], "Run the agent (in the Agent goal box)"],
   [["Enter"], "Send (in AI / most inputs)"],
   [["Ctrl", "+"], "Zoom in"],
@@ -4229,6 +4244,11 @@ document.addEventListener("keydown", (e) => {
   const tag = (e.target && e.target.tagName) || "";
   if (e.key === "?" && !/INPUT|TEXTAREA|SELECT/.test(tag)) { e.preventDefault(); toggleShortcuts(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); const t = document.getElementById("sidebar-toggle"); if (t) t.click(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === "[" || e.key === "]")) {
+    // In-browser history: only while the live-platform Browser viewer is open.
+    const wv = document.getElementById("wt-view"), vw = document.getElementById("wt-viewer");
+    if (wv && vw && !vw.hidden) { e.preventDefault(); try { if (e.key === "[") { if (wv.canGoBack()) wv.goBack(); } else if (wv.canGoForward()) wv.goForward(); } catch (_) {} }
+  }
   else if (e.key === "Escape") { const k = document.getElementById("kbdov"); if (k) k.remove(); }
 });
 
