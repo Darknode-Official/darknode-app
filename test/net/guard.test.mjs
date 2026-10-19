@@ -12,7 +12,8 @@ group("net.guard: isPrivateHost blocks private/internal literals", () => {
     "100.64.0.1",                 // CGNAT
     "localhost", "foo.localhost",
     "::1", "::", "fe80::1", "fc00::1", "fd12:3456::1",
-    "::ffff:127.0.0.1", "::ffff:169.254.169.254",   // IPv4-mapped IPv6
+    "::ffff:127.0.0.1", "::ffff:169.254.169.254",   // IPv4-mapped IPv6 (dotted-quad tail)
+    "::ffff:7f00:1", "::ffff:a9fe:a9fe",             // IPv4-mapped IPv6 (hex tail) = 127.0.0.1 / 169.254.169.254
     "2130706433",                 // decimal for 127.0.0.1 (bare int -> deny)
     "0x7f000001",                 // hex literal -> deny
     "999.1.1.1",                  // malformed octet -> deny
@@ -81,6 +82,43 @@ group("net.guard: safeFetch re-validates every redirect hop", () => {
     catch (e) { err = e.message; }
     assert.ok(err && /blocked host/.test(err));
     assert.notOk(fetched, "must not fetch a blocked initial host");
+  });
+
+  test("a 302 downgrades POST→GET and drops the body", async () => {
+    const seen = [];
+    const fakeFetch = async (url, opts) => {
+      seen.push({ url, method: opts.method, body: opts.body });
+      if (url === "https://a.example.com/") return resp(302, "https://a.example.com/landing");
+      return resp(200);
+    };
+    await safeFetch("https://a.example.com/", { method: "POST", body: "payload" }, { fetch: fakeFetch, resolvesToPrivate: pub });
+    assert.equal(seen[0].method, "POST"); assert.equal(seen[0].body, "payload");
+    assert.equal(seen[1].method, "GET"); assert.equal(seen[1].body, undefined);
+  });
+
+  test("a cross-origin redirect strips Authorization and Cookie", async () => {
+    const seen = [];
+    const fakeFetch = async (url, opts) => {
+      seen.push({ url, headers: opts.headers });
+      if (url === "https://a.example.com/") return resp(307, "https://b.example.com/");
+      return resp(200);
+    };
+    await safeFetch("https://a.example.com/", { headers: { Authorization: "Bearer t", Cookie: "s=1", "X-Keep": "1" } }, { fetch: fakeFetch, resolvesToPrivate: pub });
+    assert.ok(seen[0].headers.Authorization && seen[0].headers.Cookie, "first hop keeps creds");
+    assert.notOk(seen[1].headers.Authorization, "cross-origin hop drops Authorization");
+    assert.notOk(seen[1].headers.Cookie, "cross-origin hop drops Cookie");
+    assert.equal(seen[1].headers["X-Keep"], "1", "non-sensitive header preserved");
+  });
+
+  test("a same-origin redirect keeps Authorization", async () => {
+    const seen = [];
+    const fakeFetch = async (url, opts) => {
+      seen.push({ headers: opts.headers });
+      if (url === "https://a.example.com/one") return resp(307, "https://a.example.com/two");
+      return resp(200);
+    };
+    await safeFetch("https://a.example.com/one", { headers: { Authorization: "Bearer t" } }, { fetch: fakeFetch, resolvesToPrivate: pub });
+    assert.equal(seen[1].headers.Authorization, "Bearer t", "same-origin keeps creds");
   });
 
   test("gives up after too many redirects", async () => {

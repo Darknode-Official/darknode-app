@@ -730,6 +730,28 @@ ipcMain.handle("cve:search", async (_e, q, opts) => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// Read a response body as text but stop after ~maxChars, so a large download can't
+// balloon main-process memory (the abort timer bounds time, not volume) and a body
+// above V8's string limit can't throw a RangeError inside res.text().
+async function readTextCapped(res, maxChars) {
+  const body = res.body;
+  if (!body || typeof body.getReader !== "function") {
+    const t = await res.text();
+    return t.length > maxChars ? t.slice(0, maxChars) + "\n...[truncated]" : t;
+  }
+  const reader = body.getReader(), dec = new TextDecoder();
+  let out = "";
+  try {
+    while (out.length < maxChars) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += dec.decode(value, { stream: true });
+    }
+    out += dec.decode();
+  } finally { try { await reader.cancel(); } catch (_) {} }
+  return out.length > maxChars ? out.slice(0, maxChars) + "\n...[truncated]" : out;
+}
+
 // ---- HTTP request tool (repeater). Runs in main to dodge renderer CSP/CORS. ----
 ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout }) => {
   const t0 = Date.now();
@@ -744,9 +766,9 @@ ipcMain.handle("http:request", async (_e, { method, url, headers, body, timeout 
       body: (m === "GET" || m === "HEAD") ? undefined : (body || undefined),
       signal: ctrl.signal,
     });
-    const text = await res.text();
+    const text = await readTextCapped(res, 200000);
     const hdrs = {}; res.headers.forEach((v, k) => (hdrs[k] = v));
-    return { ok: true, status: res.status, statusText: res.statusText, url: res.url, headers: hdrs, body: text.length > 200000 ? text.slice(0, 200000) + "\n...[truncated]" : text, ms: Date.now() - t0 };
+    return { ok: true, status: res.status, statusText: res.statusText, url: res.url, headers: hdrs, body: text, ms: Date.now() - t0 };
   } catch (e) { return { ok: false, error: e.name === "AbortError" ? "request timed out" : e.message, ms: Date.now() - t0 }; }
   finally { clearTimeout(to); }
 });
@@ -1197,7 +1219,7 @@ ipcMain.handle("vm:update", (_e, { id, patch }) => {
   // becomes the QEMU -drive file=), `id` or `created`. memMB/cpus are clamped
   // to the same bounds as creation.
   const p = patch || {};
-  if (typeof p.name === "string") v.name = p.name;
+  if (typeof p.name === "string") v.name = p.name.replace(/[^\w.-]/g, "_").slice(0, 40) || v.name;
   if ("iso" in p) v.iso = String(p.iso || "");
   if (p.memMB != null) v.memMB = Math.max(256, Math.min(65536, parseInt(p.memMB, 10) || v.memMB));
   if (p.cpus != null) v.cpus = Math.max(1, Math.min(32, parseInt(p.cpus, 10) || v.cpus));
@@ -1438,5 +1460,7 @@ ipcMain.handle("mcp:status", () => ({ ok: true, connected: [...mcpServers.keys()
 
 app.on("before-quit", () => {
   for (const r of vmProcs.values()) { try { r.proc.kill("SIGKILL"); } catch (_) {} }
+  for (const p of procs.values()) { try { p.kill(); } catch (_) {} }   // streamed `run` children
+  for (const p of ptys.values()) { try { p.kill(); } catch (_) {} }     // open terminal PTYs
   for (const s of mcpServers.values()) { s.closedByUser = true; if (s.reconnectTimer) { try { clearTimeout(s.reconnectTimer); } catch (_) {} } try { if (s.proc) s.proc.kill("SIGKILL"); } catch (_) {} }
 });

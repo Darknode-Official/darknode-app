@@ -2756,6 +2756,7 @@ ${ollamaLine}`;
     const send = async () => {
       const method = $("#hm", el).value, u = $("#hu", el).value.trim();
       if (!u) return;
+      if ($("#hsend", el).disabled) return;   // single-flight: ignore a second Enter/click while in flight
       const headers = {};
       $("#hh", el).value.split("\n").forEach((ln) => { const i = ln.indexOf(":"); if (i > 0) headers[ln.slice(0, i).trim()] = ln.slice(i + 1).trim(); });
       const body = $("#hb", el).value;
