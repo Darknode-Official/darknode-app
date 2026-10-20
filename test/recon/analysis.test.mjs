@@ -20,6 +20,11 @@ group("recon: analysis — SPF", () => {
     assert.equal(r.all, "+all");
     assert.ok(r.issues.some((i) => /\+all/.test(i)));
   });
+  test("an include ending in 'all' does not mask the real -all policy", () => {
+    const r = A.parseSpf(["v=spf1 include:firewall.example.com -all"]);
+    assert.equal(r.all, "-all", "the -all term is the policy, not the 'all' inside 'firewall'");
+    assert.deepEqual(r.issues, [], "a locked-down domain is not reported as wide-open");
+  });
   test("duplicate SPF records flagged", () => {
     const r = A.parseSpf([["v=spf1 -all"], ["v=spf1 ~all"]]);
     assert.ok(r.issues.some((i) => /multiple/i.test(i)));

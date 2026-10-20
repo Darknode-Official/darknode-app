@@ -102,6 +102,12 @@ group("net: url / jwt", () => {
     assert.equal(u.fragment, "frag");
     assert.equal(u.username, "user");
   });
+  test("a param named after a prototype member is read correctly, not garbled", () => {
+    const u = N.parseUrl("https://ex.com/?toString=hello&constructor=1&__proto__=evil");
+    assert.equal(u.params.toString, "hello");
+    assert.equal(u.params.constructor, "1");
+    assert.equal(u.params.__proto__, "evil", "a prototype-pollution payload param is preserved verbatim");
+  });
   test("jwt decode (unverified) — standard sample", () => {
     const tok = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
     const j = N.parseJwt(tok);

@@ -84,6 +84,11 @@ group("encoding: url / html", () => {
     assert.equal(E.htmlEncode(`<a href="x">&'`), "&lt;a href=&quot;x&quot;&gt;&amp;&#39;");
     assert.equal(E.htmlDecode("&lt;a&gt;&amp;&#39;&#x27;&quot;"), "<a>&''\"");
   });
+  test("an out-of-range numeric entity is left intact, not thrown on", () => {
+    // cp > 0x10FFFF must not abort the whole decode with a RangeError.
+    assert.equal(E.htmlDecode("a&#1114112;b"), "a&#1114112;b");
+    assert.equal(E.htmlDecode("ok&#65;&#1114112;"), "okA&#1114112;");
+  });
 });
 
 group("encoding: rot / morse", () => {
