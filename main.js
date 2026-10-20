@@ -434,9 +434,10 @@ ipcMain.handle("ollama:stream", (_e, { id, body }) => new Promise((resolve) => {
     { host: "127.0.0.1", port: 11434, path: "/api/chat", method: "POST",
       headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } },
     (r) => {
+      r.setEncoding("utf8"); // decode on the stream so a multibyte char split across chunks is never mangled
       let buf = "";
-      r.on("data", (d) => {
-        buf += d.toString(); let nl;
+      const pump = (d) => {
+        buf += d; let nl;
         while ((nl = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1); if (!line) continue;
           let j; try { j = JSON.parse(line); } catch (_) { continue; }
@@ -445,8 +446,9 @@ ipcMain.handle("ollama:stream", (_e, { id, body }) => new Promise((resolve) => {
           if (m.content) { content += m.content; win && win.webContents.send("ollama:token", { id, chunk: m.content }); }
           if (m.tool_calls && m.tool_calls.length) toolCalls = (toolCalls || []).concat(m.tool_calls);
         }
-      });
-      r.on("end", () => done({ ok: true, message: { role: "assistant", content, tool_calls: toolCalls || undefined } }));
+      };
+      r.on("data", pump);
+      r.on("end", () => { if (buf.trim()) pump("\n"); done({ ok: true, message: { role: "assistant", content, tool_calls: toolCalls || undefined } }); });
       r.on("error", (err) => done({ ok: false, error: err.message }));
     }
   );
@@ -472,9 +474,10 @@ ipcMain.handle("claude:stream", (_e, { id, body, apiKey }) => new Promise((resol
       headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data), "x-api-key": key, "anthropic-version": "2023-06-01" } },
     (r) => {
       if (r.statusCode >= 400) { let e = ""; r.on("data", (d) => (e += d)); r.on("end", () => { let msg = e; try { const j = JSON.parse(e); msg = (j.error && j.error.message) || e; } catch (_) {} done({ ok: false, error: "Anthropic " + r.statusCode + ": " + msg }); }); return; }
+      r.setEncoding("utf8"); // decode on the stream so a multibyte char split across chunks is never mangled
       let buf = "";
-      r.on("data", (d) => {
-        buf += d.toString(); let nl;
+      const pump = (d) => {
+        buf += d; let nl;
         while ((nl = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
           if (!line.startsWith("data:")) continue;
@@ -484,8 +487,9 @@ ipcMain.handle("claude:stream", (_e, { id, body, apiKey }) => new Promise((resol
           const txt = anthropicDelta(o); if (txt) { content += txt; win && win.webContents.send("claude:token", { id, chunk: txt }); }
           const u = usageOf(o); if (u) { if (u.inTok) inTok = u.inTok; if (u.outTok) outTok = u.outTok; }
         }
-      });
-      r.on("end", () => done({ ok: true, message: { role: "assistant", content }, usage: { inTok, outTok } }));
+      };
+      r.on("data", pump);
+      r.on("end", () => { if (buf.trim()) pump("\n"); done({ ok: true, message: { role: "assistant", content }, usage: { inTok, outTok } }); });
       r.on("error", (err) => done({ ok: false, error: err.message }));
     }
   );
@@ -533,9 +537,10 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
     { hostname: url.hostname, port: url.port || (url.protocol === "https:" ? 443 : 80), path: url.pathname + url.search, method: "POST", headers },
     (r) => {
       if (r.statusCode >= 400) { let e = ""; r.on("data", (d) => (e += d)); r.on("end", () => { let msg = e; try { const j = JSON.parse(e); msg = (j.error && j.error.message) || e; } catch (_) {} done({ ok: false, error: "API " + r.statusCode + ": " + String(msg).slice(0, 300) }); }); return; }
+      r.setEncoding("utf8"); // decode on the stream so a multibyte char split across chunks is never mangled
       let buf = "";
-      r.on("data", (d) => {
-        buf += d.toString(); let nl;
+      const pump = (d) => {
+        buf += d; let nl;
         while ((nl = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
           if (!line.startsWith("data:")) continue;
@@ -547,8 +552,10 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
           if (delta.tool_calls && delta.tool_calls.length) toolCalls = mergeToolCallDeltas(toolCalls, delta.tool_calls);
           if (o.usage) { inTok = o.usage.prompt_tokens || inTok; outTok = o.usage.completion_tokens || outTok; }
         }
-      });
+      };
+      r.on("data", pump);
       r.on("end", () => {
+        if (buf.trim()) pump("\n");
         const tc = toolCalls ? toolCalls.filter(Boolean).map((t) => ({ id: t.id, type: t.type, function: { name: t.function.name, arguments: (() => { try { return JSON.parse(t.function.arguments || "{}"); } catch (_) { return t.function.arguments; } })() } })) : null;
         done({ ok: true, message: { role: "assistant", content, tool_calls: tc && tc.length ? tc : undefined }, usage: { inTok, outTok } });
       });
@@ -575,9 +582,10 @@ ipcMain.handle("dai:stream", (_e, { id, messages }) => new Promise((resolve) => 
       headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) } },
     (r) => {
       if (r.statusCode >= 400) { let e = ""; r.on("data", (d) => (e += d)); r.on("end", () => { let msg = e; try { const j = JSON.parse(e); msg = (j && j.error) || e; } catch (_) {} done({ ok: false, error: "Darknode AI " + r.statusCode + ": " + String(msg).slice(0, 300) }); }); return; }
+      r.setEncoding("utf8"); // decode on the stream so a multibyte char split across chunks is never mangled
       let buf = "";
-      r.on("data", (d) => {
-        buf += d.toString(); let nl;
+      const pump = (d) => {
+        buf += d; let nl;
         while ((nl = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
           if (!line.startsWith("data:")) continue;
@@ -586,8 +594,9 @@ ipcMain.handle("dai:stream", (_e, { id, messages }) => new Promise((resolve) => 
           const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
           if (delta.content) { content += delta.content; win && win.webContents.send("dai:token", { id, chunk: delta.content }); }
         }
-      });
-      r.on("end", () => done({ ok: true, message: { role: "assistant", content } }));
+      };
+      r.on("data", pump);
+      r.on("end", () => { if (buf.trim()) pump("\n"); done({ ok: true, message: { role: "assistant", content } }); });
       r.on("error", (err) => done({ ok: false, error: err.message }));
     }
   );

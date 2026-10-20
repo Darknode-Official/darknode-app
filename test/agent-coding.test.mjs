@@ -50,6 +50,13 @@ group("agent-coding: reliable edits", () => {
     const r = NC.applyEditsFlexible("foo()\nfoo()\n", [{ find: "foo( )", replace: "bar()" }]);
     assert.notOk(r.ok, "two matches => error, never a silent edit");
   });
+  test("replacement with $ sequences is inserted literally, not as a template", () => {
+    // $&, $$, $1 in the replace string must survive verbatim (string.replace would expand them).
+    const r = NC.applyEdits("const price = AMOUNT;\n", [{ find: "AMOUNT", replace: "$1,000 ($$ not $&)" }]);
+    assert.ok(r.ok); assert.equal(r.content, "const price = $1,000 ($$ not $&);\n");
+    const f = NC.applyEditsFlexible("x = A\n", [{ find: "x = A", replace: "x = $& + $`" }]);
+    assert.ok(f.ok); assert.equal(f.content, "x = $& + $`\n");
+  });
 });
 
 group("agent-coding: patch application", () => {
@@ -65,6 +72,15 @@ group("agent-coding: patch application", () => {
     const patch = "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n anchor\n-x\n+y\n";
     const r = NC.applyHunks("pad\npad\nanchor\nx\n", NC.parsePatch(patch)[0].hunks);
     assert.ok(r.ok); assert.equal(r.content, "pad\npad\nanchor\ny\n");
+  });
+  test("in-hunk lines that look like file headers are body, not headers", () => {
+    // A removed line "-- dashes" becomes "--- dashes"; an added "++ plus" becomes "+++ plus".
+    // These must stay inside the hunk body, not be eaten as --- / +++ file headers.
+    const patch = "--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@\n keep\n--- dashes\n+++ plus\n";
+    const files = NC.parsePatch(patch);
+    assert.equal(files.length, 1); assert.equal(files[0].file, "f");
+    const r = NC.applyHunks("keep\n-- dashes\n", files[0].hunks);
+    assert.ok(r.ok); assert.equal(r.content, "keep\n++ plus\n");
   });
 });
 

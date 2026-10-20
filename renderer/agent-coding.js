@@ -253,7 +253,8 @@
       const occ = out.split(find).length - 1;
       if (occ === 0) return { ok: false, error: "edit " + (i + 1) + ": find text not present — check exact whitespace/indentation", applied: [] };
       if (occ > 1 && !e.replaceAll) return { ok: false, error: "edit " + (i + 1) + ": find matches " + occ + " places — add context to make it unique, or set replaceAll", applied: [] };
-      out = e.replaceAll ? out.split(find).join(repl) : out.replace(find, repl);
+      // function replacer: repl is a literal, not a template — keeps $$, $&, $1 etc. verbatim
+      out = e.replaceAll ? out.split(find).join(repl) : out.replace(find, () => repl);
       applied.push({ find: find.slice(0, 40), count: e.replaceAll ? occ : 1 });
     }
     return { ok: true, content: out, applied };
@@ -303,7 +304,7 @@
       const find = e.find, repl = e.replace == null ? "" : e.replace;
       if (typeof find !== "string" || !find.length) return { ok: false, error: "edit " + (i + 1) + ": empty find", applied: [] };
       const occ = out.split(find).length - 1;
-      if (occ === 1 || (occ > 1 && e.replaceAll)) { out = e.replaceAll ? out.split(find).join(repl) : out.replace(find, repl); applied.push({ mode: "exact", count: occ }); continue; }
+      if (occ === 1 || (occ > 1 && e.replaceAll)) { out = e.replaceAll ? out.split(find).join(repl) : out.replace(find, () => repl); applied.push({ mode: "exact", count: occ }); continue; }
       if (occ > 1) return { ok: false, error: "edit " + (i + 1) + ": matches " + occ + " places — add context or replaceAll", applied: [] };
       const loc = locateFlexible(out, find);
       if (loc.count === 0) return { ok: false, error: "edit " + (i + 1) + ": find text not present (even ignoring whitespace)", applied: [] };
@@ -326,8 +327,10 @@
     for (const raw of lines) {
       if (/^diff --git /.test(raw)) { closeFile(); cur = { file: null, hunks: [] }; continue; }
       let m;
-      if ((m = /^\+\+\+ (?:b\/)?(.+?)\s*$/.exec(raw))) { if (!cur) cur = { file: null, hunks: [] }; if (m[1] !== "/dev/null") cur.file = m[1]; continue; }
-      if (/^--- /.test(raw)) { if (!cur) cur = { file: null, hunks: [] }; const mm = /^--- (?:a\/)?(.+?)\s*$/.exec(raw); if (mm && mm[1] !== "/dev/null" && !cur.file) cur.file = mm[1]; continue; }
+      // File headers appear only before a file's first @@; once inside a hunk, a line starting
+      // "+++ "/"--- " is real content (a "++ "/"-- " line prefixed by its +/- tag), so skip the header branches.
+      if (!hunk && (m = /^\+\+\+ (?:b\/)?(.+?)\s*$/.exec(raw))) { if (!cur) cur = { file: null, hunks: [] }; if (m[1] !== "/dev/null") cur.file = m[1]; continue; }
+      if (!hunk && /^--- /.test(raw)) { if (!cur) cur = { file: null, hunks: [] }; const mm = /^--- (?:a\/)?(.+?)\s*$/.exec(raw); if (mm && mm[1] !== "/dev/null" && !cur.file) cur.file = mm[1]; continue; }
       if (/^@@/.test(raw)) { closeHunk(); if (!cur) cur = { file: null, hunks: [] }; hunk = { before: [], after: [] }; continue; }
       if (!hunk) continue;
       const tag = raw[0], body = raw.slice(1);
@@ -355,7 +358,7 @@
         out = after; continue;
       }
       const occ = out.split(before).length - 1;
-      if (occ === 1) { out = out.replace(before, after); continue; }
+      if (occ === 1) { out = out.replace(before, () => after); continue; }
       if (occ > 1) return { ok: false, error: "hunk " + (h + 1) + ": context matches " + occ + " places — patch is ambiguous" };
       const loc = locateFlexible(out, before);
       if (loc.count === 1) { const delta = loc.indent.length - leadWs(before).length; out = out.slice(0, loc.start) + reindentBlock(after, delta) + out.slice(loc.end); continue; }
