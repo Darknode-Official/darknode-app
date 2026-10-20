@@ -133,7 +133,7 @@
       { id: "remove-blank", name: "Remove blank lines", desc: "Drop empty lines", run: (s) => s.split("\n").filter((l) => l.trim()).join("\n") },
       { id: "trim-lines", name: "Trim lines", desc: "Strip leading/trailing spaces", run: (s) => s.split("\n").map((l) => l.trim()).join("\n") },
       { id: "count", name: "Count text", desc: "Lines, words, chars, bytes", run: (s) => "Lines: " + (s ? s.split("\n").length : 0) + "\nWords: " + (s.trim() ? s.trim().split(/\s+/).length : 0) + "\nChars: " + s.length + "\nBytes: " + bytes(s).length },
-      { id: "word-freq", name: "Word frequency", desc: "Count each word", run: (s) => { const m = {}; (s.toLowerCase().match(/[a-z0-9']+/g) || []).forEach((w) => (m[w] = (m[w] || 0) + 1)); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 100).map(([w, c]) => c + "\t" + w).join("\n"); } },
+      { id: "word-freq", name: "Word frequency", desc: "Count each word", run: (s) => { const m = Object.create(null); (s.toLowerCase().match(/[a-z0-9']+/g) || []).forEach((w) => (m[w] = (m[w] || 0) + 1)); return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 100).map(([w, c]) => c + "\t" + w).join("\n"); } },
       { id: "js-escape", name: "JS string escape", desc: "Escape for a JS string literal", run: (s) => JSON.stringify(s).slice(1, -1) },
       { id: "js-unescape", name: "JS string unescape", desc: "Un-escape a JS string literal", run: (s) => JSON.parse('"' + s.replace(/^"|"$/g, "") + '"') },
     ]),

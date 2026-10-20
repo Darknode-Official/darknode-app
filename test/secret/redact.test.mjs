@@ -95,4 +95,15 @@ group("redact: deep object walk", () => {
     const out = redact(a);
     assert.equal(out.name, "x");
   });
+  test("secret-named key holding an array masks every primitive element", () => {
+    const out = redact({ apiKeys: ["AKIAIOSFODNN7EXAMPLE", "raw-nonmatching-token-value"] });
+    assert.equal(out.apiKeys[0], MASK);
+    assert.equal(out.apiKeys[1], MASK);
+  });
+  test("a parsed __proto__ own key survives as data and is scrubbed", () => {
+    const out = redact(JSON.parse('{"__proto__":{"token":"abcd1234"},"ok":1}'));
+    assert.equal(out.ok, 1);
+    assert.ok(Object.prototype.hasOwnProperty.call(out, "__proto__"), "__proto__ must be an own data property");
+    assert.equal(out.__proto__.token, MASK);
+  });
 });
