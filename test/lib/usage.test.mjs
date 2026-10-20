@@ -60,6 +60,12 @@ group("usage: summarize", () => {
     assert.ok(z.byEngine.unknown);
     assert.ok(z.byOperator.unknown);
   });
+  test("a __proto__ model is tallied, not dropped, and does not poison Object.prototype", () => {
+    const z = summarize([{ ts: "2026-01-01T00:00:00Z", engine: "claude", model: "__proto__", cost: 5, inTok: 10, outTok: 20 }]);
+    assert.equal(z.byModel["__proto__"].turns, 1);
+    assert.close(z.byModel["__proto__"].cost, 5, 1e-9);
+    assert.equal(({}).turns, undefined); // prototype intact
+  });
 });
 
 group("usage: formatters", () => {

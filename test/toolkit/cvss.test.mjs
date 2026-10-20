@@ -27,6 +27,12 @@ group("cvss: scope + version", () => {
     assert.equal(C.score("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H").baseScore, 9.8);
     assert.equal(C.score("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H").baseScore, 10.0);
   });
+  test("uncapped scope-changed vector differs between v3.0 and v3.1 (ISC rescale)", () => {
+    // v3.1 rescaled the scope-changed impact sub-formula (×0.9731, exp 13), so this uncapped
+    // vector scores 6.9 under 3.1 but 6.8 under 3.0. The old code used the 3.0 form for both.
+    assert.equal(C.score("CVSS:3.1/AV:P/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:H").baseScore, 6.9);
+    assert.equal(C.score("CVSS:3.0/AV:P/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:H").baseScore, 6.8);
+  });
   test("scope-changed applies the 1.08 multiplier and PR_C weights", () => {
     const u = C.score("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:L").baseScore;
     const c = C.score("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:L/I:L/A:L").baseScore;
