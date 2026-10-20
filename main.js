@@ -137,6 +137,16 @@ function createWindow() {
     else if (k === "0" || code === "Numpad0") { _zoom = 0; win.webContents.setZoomLevel(0); e.preventDefault(); saveWinStateSoon(); }
   });
   win.webContents.on("did-finish-load", () => { try { win.webContents.setZoomLevel(_zoom); } catch (_) {} });
+  // If the renderer process dies (crash/OOM), the shells, streamed runs and MCP stdio
+  // servers it owned are orphaned — and MCP would keep trying to reconnect to a dead
+  // renderer every few seconds. Reap them so nothing leaks; VMs are left running (main
+  // still holds their handles and a reloaded renderer can re-list them).
+  win.webContents.on("render-process-gone", () => {
+    for (const p of procs.values()) { try { p.kill(); } catch (_) {} } procs.clear();
+    for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
+    for (const s of mcpServers.values()) { s.closedByUser = true; if (s.reconnectTimer) { try { clearTimeout(s.reconnectTimer); } catch (_) {} s.reconnectTimer = null; } try { if (s.proc) s.proc.kill("SIGKILL"); } catch (_) {} }
+    mcpServers.clear(); mcpRetry.clear();
+  });
   win.on("maximize", () => { win.webContents.send("win:state", true); saveWinStateSoon(); });
   win.on("unmaximize", () => { win.webContents.send("win:state", false); saveWinStateSoon(); });
   if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
@@ -291,8 +301,9 @@ ipcMain.handle("run", (_e, { id, cmd, cwd }) => {
                   : spawn("/bin/sh", ["-c", cmd], { cwd: cwd || os.homedir() });
   procs.set(id, p);
   const send = (chunk) => win && win.webContents.send("run:data", { id, chunk });
-  p.stdout.on("data", (d) => send(d.toString()));
-  p.stderr.on("data", (d) => send(d.toString()));
+  p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across pipe-chunk boundaries so multibyte UTF-8 isn't split into U+FFFD
+  p.stdout.on("data", send);
+  p.stderr.on("data", send);
   p.on("close", (code) => { procs.delete(id); win && win.webContents.send("run:end", { id, code }); });
   p.on("error", (err) => { send("[error] " + err.message + "\n"); procs.delete(id); win && win.webContents.send("run:end", { id, code: -1 }); });
   return true;
@@ -332,14 +343,22 @@ ipcMain.handle("agent:exec", (_e, { command, cwd, timeout, autopass }) => new Pr
         else if (autopass && /(?:[Pp]assword|[Pp]assphrase)(?:\s+for\s+\S+)?:\s*$/.test(tail)) { answers++; try { p.write(autopass + "\r"); } catch (_) {} }
       }
     });
-    p.onExit(({ exitCode }) => { let c = clean(out).trim(); if (autopass) c = c.split(autopass).join("***"); c = redactor.redactString(c); finish({ ok: true, code: exitCode, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
-    to = setTimeout(() => { killed = true; try { p.kill(); } catch (_) {} }, timeout || 60000);
+    // Shape the captured output once; used by both normal exit and the timeout fallback.
+    const done = (code) => { let c = clean(out).trim(); if (autopass) c = c.split(autopass).join("***"); c = redactor.redactString(c); finish({ ok: true, code, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); };
+    p.onExit(({ exitCode }) => done(exitCode));
+    to = setTimeout(() => {
+      killed = true;
+      try { p.kill(); } catch (_) {}                                     // polite first (node-pty default is SIGHUP)
+      setTimeout(() => { try { p.kill("SIGKILL"); } catch (_) {} }, 2000); // escalate if the child ignores SIGHUP
+      setTimeout(() => done(null), 3500);                                // guarantee the promise resolves even if onExit never fires
+    }, timeout || 60000);
     return;
   }
   let p;
   try { p = isWin ? spawn("cmd.exe", ["/c", command], { cwd: workdir }) : spawn("/bin/sh", ["-c", command], { cwd: workdir }); }
   catch (err) { return finish({ ok: false, error: err.message }); }
-  const add = (d) => { if (out.length < cap + 200) out += d.toString(); };
+  p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across chunk boundaries before the model sees it
+  const add = (d) => { if (out.length < cap + 200) out += d; };
   p.stdout.on("data", add); p.stderr.on("data", add);
   p.on("close", (code) => { let c = out; if (autopass) c = c.split(autopass).join("***"); c = redactor.redactString(c); finish({ ok: true, code, killed, output: c.length > cap ? c.slice(0, cap) + "\n...[truncated]" : (c || "(no output)") }); });
   p.on("error", (err) => finish({ ok: false, error: err.message }));
@@ -352,7 +371,8 @@ ipcMain.handle("tool:install", (_e, { id, install }) => new Promise((res) => {
   let cmd = String(install || "").trim();
   if (cmd.startsWith("sudo ")) cmd = "pkexec " + cmd.slice(5).replace(/^apt install/, "apt-get install");
   const p = spawn("/bin/bash", ["-lc", cmd]);
-  const send = (c) => win && win.webContents.send("tool:install:data", { id, chunk: c.toString() });
+  p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across chunk boundaries (multibyte-safe)
+  const send = (c) => win && win.webContents.send("tool:install:data", { id, chunk: c });
   p.stdout.on("data", send); p.stderr.on("data", send);
   p.on("close", (code) => res({ ok: code === 0, code, cmd }));
   p.on("error", (e) => { send("[error] " + e.message + "\n"); res({ ok: false, error: e.message, cmd }); });
@@ -371,7 +391,7 @@ ipcMain.handle("pty:spawn", (_e, { cols, rows }) => {
   p.onExit(() => { ptys.delete(id); win && win.webContents.send("pty:exit", { id }); });
   return { ok: true, id, shell };
 });
-ipcMain.handle("pty:write", (_e, { id, data }) => { const p = ptys.get(id); if (p) p.write(data); });
+ipcMain.handle("pty:write", (_e, { id, data }) => { const p = ptys.get(id); if (p) { try { p.write(data); } catch (_) {} } }); // keystrokes can race pty exit
 ipcMain.handle("pty:resize", (_e, { id, cols, rows }) => { const p = ptys.get(id); if (p) { try { p.resize(cols, rows); } catch (_) {} } });
 ipcMain.handle("pty:kill", (_e, { id }) => { const p = ptys.get(id); if (p) { try { p.kill(); } catch (_) {} ptys.delete(id); } });
 
@@ -1317,13 +1337,14 @@ ipcMain.handle("vm:screendump", async (_e, { id }) => {
 // Dependency-free JSON-RPC 2.0 over newline-delimited stdio OR HTTP POST. Supports tools, resources,
 // prompts, lifecycle (auto-reconnect + tools/list_changed), and server->client sampling routed to local Ollama.
 const mcpServers = new Map(); // name -> session
+const mcpRetry = new Map();    // name -> reconnect attempt count (survives the per-connect session object)
 const MCP_PROTO = "2024-11-05";
 let MCP_SAMPLE_MODEL = "hermes3"; // model used to answer MCP sampling requests
 
 function mcpCleanup(name, byUser) {
   const s = mcpServers.get(name);
   if (!s) return;
-  if (byUser) s.closedByUser = true;
+  if (byUser) { s.closedByUser = true; mcpRetry.delete(name); }
   if (s.reconnectTimer) { clearTimeout(s.reconnectTimer); s.reconnectTimer = null; }
   for (const p of s.pending.values()) { try { p.reject(new Error("disconnected")); } catch (_) {} }
   s.pending.clear();
@@ -1404,7 +1425,12 @@ function mcpNotify(s, method, params) { if (s.transport === "http") mcpHttpPost(
 async function mcpRefreshTools(s) { try { const tl = await mcpRequest(s, "tools/list", {}, 20000); s.tools = (tl && tl.tools) || []; } catch (_) {} }
 function mcpScheduleReconnect(s) {
   if (s.closedByUser || s.reconnectTimer) return;
-  s.reconnectTimer = setTimeout(() => { s.reconnectTimer = null; if (!s.closedByUser) mcpConnect(s.cfg).catch(() => {}); }, 3000);
+  // Exponential backoff with a cap, and give up after a few tries, so a server that
+  // crashes on launch can't respawn every 3s forever. Reset on a successful connect.
+  const n = (mcpRetry.get(s.name) || 0) + 1; mcpRetry.set(s.name, n);
+  if (n > 8) return;
+  const delay = Math.min(3000 * 2 ** (n - 1), 60000);
+  s.reconnectTimer = setTimeout(() => { s.reconnectTimer = null; if (!s.closedByUser) mcpConnect(s.cfg).catch(() => {}); }, delay);
 }
 async function mcpConnect(cfg) {
   const name = cfg && cfg.name; if (!name) return { ok: false, error: "name is required" };
@@ -1418,7 +1444,8 @@ async function mcpConnect(cfg) {
     if (!cfg.command) return { ok: false, error: "command is required for stdio transport" };
     let proc; try { proc = spawn(cfg.command, cfg.args || [], { env: Object.assign({}, process.env, cfg.env || {}), stdio: ["pipe", "pipe", "pipe"] }); } catch (e) { return { ok: false, error: e.message }; }
     s.proc = proc;
-    proc.stderr.on("data", (d) => { s.spawnErr = (s.spawnErr + d.toString()).slice(-600); });
+    proc.stdout.setEncoding("utf8"); proc.stderr.setEncoding("utf8"); // decode JSON-RPC across chunk boundaries (multibyte payloads are not split)
+    proc.stderr.on("data", (d) => { s.spawnErr = (s.spawnErr + d).slice(-600); });
     proc.stdout.on("data", (d) => mcpOnData(s, d));
     proc.on("error", (e) => { for (const p of s.pending.values()) p.reject(e); s.pending.clear(); });
     proc.on("exit", () => { for (const p of s.pending.values()) p.reject(new Error("MCP server exited")); s.pending.clear(); if (!s.closedByUser) mcpScheduleReconnect(s); });
@@ -1428,6 +1455,7 @@ async function mcpConnect(cfg) {
     const init = await mcpRequest(s, "initialize", { protocolVersion: MCP_PROTO, capabilities: { sampling: {}, roots: { listChanged: false } }, clientInfo: { name: "Darknode", version: app.getVersion() } }, 20000);
     s.info = (init && init.serverInfo) || null; s.caps = (init && init.capabilities) || {};
     mcpNotify(s, "notifications/initialized", {});
+    mcpRetry.delete(name); // connected — clear the backoff counter
     await mcpRefreshTools(s);
     try { if (s.caps.resources) { const r = await mcpRequest(s, "resources/list", {}, 15000); s.resources = (r && r.resources) || []; } } catch (_) {}
     try { if (s.caps.prompts) { const r = await mcpRequest(s, "prompts/list", {}, 15000); s.prompts = (r && r.prompts) || []; } } catch (_) {}
