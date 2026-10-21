@@ -10,7 +10,7 @@
   const te = new TextEncoder(), td = new TextDecoder();
   const bytes = (s) => te.encode(s);
   const hex = (u8) => Array.from(u8).map((b) => b.toString(16).padStart(2, "0")).join("");
-  const fromHex = (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = "0" + h; return new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16))); };
+  const fromHex = (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = h + "0"; return new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16))); }; // trailing-pad a dangling nibble so the leading bytes stay aligned (leading-pad shifted every byte)
 
   // ---- subtle-crypto digests (SHA family) ----
   async function digest(algo, s) { return hex(new Uint8Array(await crypto.subtle.digest(algo, bytes(s)))); }
@@ -149,7 +149,7 @@
       { id: "query-parse", name: "Query string parser", desc: "Parse a=1&b=2", run: (s) => [...new URLSearchParams(s.trim().replace(/^\?/, ""))].map(([k, v]) => k + " = " + v).join("\n") || "(empty)" },
       { id: "color-convert", name: "Color convert", desc: "HEX / RGB / HSL", run: (s) => colorConvert(s) },
       { id: "timestamp", name: "Unix timestamp", desc: "Epoch to/from date", fields: [{ k: "mode", label: "Direction", type: "select", options: [["to", "Timestamp to date"], ["from", "Date to timestamp"]], def: "to" }], run: (s, o) => { s = s.trim(); if (o.mode === "from") { const d = new Date(s || Date.now()); if (isNaN(d)) throw new Error("unparseable date"); return "seconds " + Math.floor(d.getTime() / 1000) + "\nmillis  " + d.getTime(); } let n = +s; if (!s) n = Date.now(); if (n < 1e12) n *= 1000; const d = new Date(n); if (isNaN(d)) throw new Error("unparseable timestamp"); return "UTC   " + d.toISOString() + "\nLocal " + d.toString(); } },
-      { id: "regex-test", name: "Regex tester", desc: "Test a pattern against the input", fields: [{ k: "pattern", label: "Pattern", ph: "\\d+" }, { k: "flags", label: "Flags", ph: "gi", def: "g" }], run: (s, o) => { if (!o.pattern) throw new Error("pattern required"); const re = new RegExp(o.pattern, o.flags || ""); const m = s.match(re); if (!m) return "No match."; return m.length + " match(es):\n" + m.join("\n"); } },
+      { id: "regex-test", name: "Regex tester", desc: "Test a pattern against the input", fields: [{ k: "pattern", label: "Pattern", ph: "\\d+" }, { k: "flags", label: "Flags", ph: "gi", def: "g" }], run: (s, o) => { if (!o.pattern) throw new Error("pattern required"); const fl = o.flags || ""; const re = new RegExp(o.pattern, fl); if (!fl.includes("g")) { const m = re.exec(s); if (!m) return "No match."; return "1 match: " + m[0] + (m.length > 1 ? "\ngroups: " + m.slice(1).map((g) => g === undefined ? "(none)" : g).join(", ") : ""); } const m = s.match(re); if (!m) return "No match."; return m.length + " match(es):\n" + m.join("\n"); } },
       { id: "user-agent", name: "User-Agent parser", desc: "Rough browser/OS from a UA string", run: (s) => uaParse(s) },
       { id: "css-hex-rgb", name: "HEX to RGB", desc: "#rrggbb to rgb()", run: (s) => { const h = s.trim().replace("#", ""); if (!/^[0-9a-fA-F]{6}$/.test(h)) throw new Error("expected #rrggbb"); return "rgb(" + parseInt(h.slice(0, 2), 16) + ", " + parseInt(h.slice(2, 4), 16) + ", " + parseInt(h.slice(4, 6), 16) + ")"; } },
     ]),

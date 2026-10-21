@@ -589,7 +589,7 @@ const BROWSER = {
   base64: (r) => io(r, [{ l: "Encode", f: (s) => btoa(unescape(encodeURIComponent(s))) }, { l: "Decode", f: (s) => decodeURIComponent(escape(atob(s))) }]),
   hash: (r) => io(r, ["SHA-1", "SHA-256", "SHA-512"].map((a) => ({ l: a, f: async (s) => a + ": " + [...new Uint8Array(await crypto.subtle.digest(a, enc.encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("") }))),
   url: (r) => io(r, [{ l: "Encode", f: (s) => encodeURIComponent(s) }, { l: "Decode", f: (s) => decodeURIComponent(s) }]),
-  hex: (r) => io(r, [{ l: "Text->Hex", f: (s) => [...enc.encode(s)].map((b) => b.toString(16).padStart(2, "0")).join(" ") }, { l: "Hex->Text", f: (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = "0" + h; return new TextDecoder().decode(new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16)))); } }]),
+  hex: (r) => io(r, [{ l: "Text->Hex", f: (s) => [...enc.encode(s)].map((b) => b.toString(16).padStart(2, "0")).join(" ") }, { l: "Hex->Text", f: (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = h + "0"; return new TextDecoder().decode(new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16)))); } }]),
   jwt: (r) => io(r, [{ l: "Decode", f: (s) => { const p = s.trim().split("."); if (p.length < 2) throw new Error("not a JWT (need header.payload.signature)"); const d = (x) => JSON.stringify(JSON.parse(decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/"))))), null, 2); return "HEADER\n" + d(p[0]) + "\n\nPAYLOAD\n" + d(p[1]); } }]),
   revshell: (r) => {
     r.innerHTML = `<div class="row"><input class="f" id="ip" value="10.0.0.1"><input class="f" id="port" value="4444" style="max-width:100px"></div><div class="btns" id="ls"></div><pre class="out" id="o"></pre>`;
@@ -2528,6 +2528,7 @@ ${ollamaLine}`;
     }
     const sstat = (cls, txt) => { $$("sstat").className = "run-status " + (cls || ""); $$("sstat").textContent = txt; };
     async function run() {
+      if (running) return; // single-flight: a second click before the awaits below set running would start an interleaving scan sharing openPorts/rows/curId
       const raw = $$("shost").value.trim(); if (!raw) return;
       const { ports, error: perr } = portsFor();
       if (perr) { sstat("bad", "Port spec: " + perr); return; }
@@ -2608,6 +2609,7 @@ ${ollamaLine}`;
       return COMMON_PATHS;
     }
     async function run() {
+      if (running) return; // single-flight: a second click before setRunning(true) would start an interleaving fuzz run
       let base = $$("furl").value.trim(); if (!base) return;
       if (!/^https?:\/\//i.test(base)) base = "http://" + base;
       if (!await ensureScope("fuzz", base)) { $$("fstat").className = "run-status"; $$("fstat").textContent = "Fuzzing not authorized for " + base + "."; return; }
