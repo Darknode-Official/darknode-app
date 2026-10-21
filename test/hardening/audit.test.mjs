@@ -317,6 +317,13 @@ group("audit: exporters", () => {
     for (const cell of row.split(",")) assert.ok(!/^[=+\-@]/.test(cell.replace(/^"/, "")), `cell must not start a formula: ${cell}`);
     assert.ok(row.includes("'=cmd") && row.includes("'@SUM"), "formulas must be quote-prefixed");
   });
+  test("a lone CR in a cell is collapsed (not an unquoted row break)", () => {
+    const rep = { results: [{ id: "x", title: "ok\rinjected", cisRef: "c", status: "fail", severity: "high", category: "linux", evidence: "e", fix: "f" }] };
+    const csv = toCSV(rep);
+    assert.equal(csv.split("\n").length, 2, "header + exactly one data row");
+    assert.notOk(/\r/.test(csv), "no raw CR may survive in the output");
+    assert.ok(csv.includes("ok injected"), "the CR becomes a space");
+  });
   test("text report has header, score, and a FAIL line", () => {
     const txt = toText(report);
     assert.ok(txt.includes("WORKSTATION SECURITY AUDIT"));

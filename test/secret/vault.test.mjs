@@ -99,6 +99,31 @@ group("vault: cross-user isolation", () => {
   });
 });
 
+group("vault: prototype-named secret names are handled as data, not inherited members", () => {
+  test("has() of an Object.prototype member name is false when nothing is stored", () => {
+    const cwd = freshCwd();
+    try {
+      const vault = createVault({ cwd, backend: fakeBackend("alice") });
+      for (const n of ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]) {
+        assert.notOk(vault.has(n), "has('" + n + "') must be false with an empty store");
+        assert.equal(vault.get(n), null, "get('" + n + "') must be null with an empty store");
+      }
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+  test("a secret literally named __proto__ round-trips and is not silently dropped", () => {
+    const cwd = freshCwd();
+    try {
+      const vault = createVault({ cwd, backend: fakeBackend("alice") });
+      assert.ok(vault.set("__proto__", "sk-proto-SECRET-1").ok, "set must report ok");
+      assert.ok(vault.has("__proto__"), "has must now be true");
+      assert.equal(vault.get("__proto__"), "sk-proto-SECRET-1", "the value must survive a reload");
+      assert.ok(vault.list().some((e) => e.name === "__proto__"), "it must appear in list()");
+      assert.equal(vault.remove("__proto__").removed, 1, "remove must report it existed");
+      assert.notOk(vault.has("__proto__"), "removed afterwards");
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+});
+
 group("vault: fail-closed when OS encryption is unavailable", () => {
   test("set refuses rather than storing plaintext", () => {
     const cwd = freshCwd();

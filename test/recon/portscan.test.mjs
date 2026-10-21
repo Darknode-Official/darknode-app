@@ -58,6 +58,11 @@ group("recon: portscan (native TCP connect)", () => {
     assert.equal(r.open, 0, "no open ports expected");
   });
 
+  test("a missing ports list is zero work, not a TypeError", async () => {
+    const r = await scanPorts("127.0.0.1", undefined, { timeout: 200 });
+    assert.equal(r.open, 0);
+  });
+
   test("honors a cancel signal", async () => {
     const closed = await closedPort();
     const signal = { cancelled: true };

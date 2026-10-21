@@ -43,6 +43,12 @@ group("recon: fuzz (native HTTP content discovery)", () => {
     } finally { await close(); }
   });
 
+  test("a missing words list is zero work, not a TypeError", async () => {
+    const r = await fuzzDirs("http://127.0.0.1:1", undefined, { timeout: 200 });
+    assert.equal(r.hits, 0);
+    assert.equal(r.found.length, 0);
+  });
+
   test("headReq returns null for an unreachable base", async () => {
     // Port 1 on loopback refuses immediately -> null, no throw.
     const out = await headReq("http://127.0.0.1:1/x", 500);
