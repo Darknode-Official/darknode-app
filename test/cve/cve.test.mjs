@@ -38,6 +38,16 @@ group("cve: normalizeNvd", () => {
   test("prefers English description", () => {
     assert.equal(C.normalizeNvd(NVD).list[0].desc, "Log4Shell JNDI RCE");
   });
+  test("a null description/reference element is skipped, not thrown (malformed NVD payload)", () => {
+    const out = C.normalizeNvd({ vulnerabilities: [
+      { cve: { id: "CVE-0000-0001", descriptions: [null], references: [null, { url: "https://x.test/ok" }] } },
+      { cve: { id: "CVE-0000-0002", descriptions: [{ lang: "en", value: "ok" }] } },
+    ] });
+    assert.equal(out.list.length, 2);         // one bad element must not abort the whole set
+    assert.equal(out.list[0].desc, "");
+    assert.deepEqual(out.list[0].refs, ["https://x.test/ok"]);
+    assert.equal(out.list[1].desc, "ok");
+  });
   test("extracts v3.1 score, severity, vector and version", () => {
     const c = C.normalizeNvd(NVD).list[0];
     assert.equal(c.score, 10.0);

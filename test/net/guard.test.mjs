@@ -11,7 +11,7 @@ group("net.guard: isPrivateHost blocks private/internal literals", () => {
     "169.254.169.254",            // AWS/GCP/Azure metadata
     "100.64.0.1",                 // CGNAT
     "localhost", "foo.localhost",
-    "::1", "::", "fe80::1", "fc00::1", "fd12:3456::1",
+    "::1", "::", "fe80::1", "fe9f::1", "febf::1", "fc00::1", "fd12:3456::1",  // fe80::/10 link-local, full range
     "::ffff:127.0.0.1", "::ffff:169.254.169.254",   // IPv4-mapped IPv6 (dotted-quad tail)
     "::ffff:7f00:1", "::ffff:a9fe:a9fe",             // IPv4-mapped IPv6 (hex tail) = 127.0.0.1 / 169.254.169.254
     "2130706433",                 // decimal for 127.0.0.1 (bare int -> deny)

@@ -51,6 +51,9 @@ group("cvss: parsing + errors", () => {
   });
   test("missing metric throws", () => {
     assert.throws(() => C.score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H"));
+    // raw {version,metrics} object path bypasses parseVector; an out-of-range value yields a
+    // NaN base score that must error, NOT fall through severity() to a fabricated "Critical".
+    assert.throws(() => C.score({ version: "3.1", metrics: { AV: "N", AC: "L", PR: "X", UI: "N", S: "U", C: "H", I: "H", A: "H" } }));
   });
   test("invalid value throws", () => {
     assert.throws(() => C.parseVector("CVSS:3.1/AV:X/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"));
