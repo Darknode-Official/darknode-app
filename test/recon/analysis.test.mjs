@@ -71,6 +71,10 @@ group("recon: analysis — DKIM", () => {
   test("no selectors -> not present", () => {
     assert.equal(A.parseDkim([]).present, false);
   });
+  test("a null selector entry is skipped, not thrown on", () => {
+    const r = A.parseDkim([{ selector: "s1", records: [["v=DKIM1; p=abc"]] }, null]);
+    assert.equal(r.present, true);
+  });
 });
 
 group("recon: analysis — CAA & DNSSEC", () => {
@@ -81,6 +85,10 @@ group("recon: analysis — CAA & DNSSEC", () => {
   });
   test("no CAA -> absent", () => {
     assert.equal(A.summarizeCaa([]).present, false);
+  });
+  test("a null CAA record is skipped, not thrown on", () => {
+    const r = A.summarizeCaa([{ issue: "letsencrypt.org" }, null]);
+    assert.deepEqual(r.issuers, ["letsencrypt.org"]);
   });
   test("DNSSEC enabled when AD flag set", () => {
     const r = A.summarizeDnssec({ ok: true, enabled: true, ad: true, dnskey: false });
@@ -115,6 +123,14 @@ group("recon: analysis — header scoring (value-based)", () => {
     const c = clean.checks.find((c) => c.key === "content-security-policy");
     assert.ok(c.points > u.points);
     assert.ok(/unsafe/i.test(u.note));
+  });
+  test("CSP that opens script-src with a bare * loses the no-wildcard credit", () => {
+    const wild = A.scoreHeaders({ "content-security-policy": "default-src 'self'; script-src *" });
+    const clean = A.scoreHeaders({ "content-security-policy": "default-src 'self'" });
+    const w = wild.checks.find((c) => c.key === "content-security-policy");
+    const c = clean.checks.find((c) => c.key === "content-security-policy");
+    assert.ok(c.points > w.points, "a script-src * must score below a locked-down CSP");
+    assert.ok(/wildcard/i.test(w.note));
   });
   test("X-Content-Type-Options must be nosniff for full credit", () => {
     const good = A.scoreHeaders({ "x-content-type-options": "nosniff" }).checks.find((c) => c.key === "x-content-type-options");

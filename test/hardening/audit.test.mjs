@@ -33,6 +33,9 @@ group("audit: disk encryption", () => {
   test("Windows Get-BitLockerVolume FullyEncrypted -> pass", () => {
     assert.equal(parsers.diskEncryptionWindows(ok("VolumeStatus : FullyEncrypted")).status, "pass");
   });
+  test("Windows BitLocker suspended (100% encrypted but Protection Off) -> fail, not a false pass", () => {
+    assert.equal(parsers.diskEncryptionWindows(ok("Percentage Encrypted: 100.0%\n    Protection Status:    Protection Off")).status, "fail");
+  });
   test("Linux lsblk with crypt type -> pass", () => {
     const lsblk = ok("NAME        TYPE  FSTYPE      MOUNTPOINT\nsda         disk\nsda1        part  ext4        /boot\nsda2        part  crypto_LUKS\nroot        crypt ext4        /");
     assert.equal(parsers.diskEncryptionLinux(lsblk, missing()).status, "pass");

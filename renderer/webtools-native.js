@@ -181,7 +181,7 @@
 
   function cidrCalc(s) {
     const [ip, pfxRaw] = s.trim().split("/"); const pfx = +pfxRaw; const p = ip.split(".");
-    if (p.length !== 4 || isNaN(pfx) || pfx < 0 || pfx > 32) throw new Error("expected a.b.c.d/prefix, e.g. 192.168.1.0/24");
+    if (p.length !== 4 || p.some((o) => !/^\d{1,3}$/.test(o) || +o > 255) || isNaN(pfx) || pfx < 0 || pfx > 32) throw new Error("expected a.b.c.d/prefix, e.g. 192.168.1.0/24");
     const ipn = p.reduce((a, o) => a * 256 + (+o), 0) >>> 0;
     const mask = pfx === 0 ? 0 : (0xffffffff << (32 - pfx)) >>> 0;
     const net = (ipn & mask) >>> 0, bcast = (net | (~mask >>> 0)) >>> 0;
