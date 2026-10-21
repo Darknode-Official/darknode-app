@@ -49,7 +49,7 @@ group("cve: normalizeNvd", () => {
     const c = C.normalizeNvd(NVD).list[1];
     assert.equal(c.score, 5.0);
     assert.equal(c.sev, "MEDIUM");
-    assert.equal(c.cvssVersion, "2");
+    assert.equal(c.cvssVersion, "2.0");
   });
   test("collects references (capped)", () => {
     assert.equal(C.normalizeNvd(NVD).list[0].refs.length, 2);

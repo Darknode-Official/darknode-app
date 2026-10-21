@@ -121,3 +121,16 @@ group("compliance: renderBundleMd", () => {
     } finally { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {} }
   });
 });
+
+group("compliance: verifyBundle robustness", () => {
+  test("a hash of wrong length or non-hex is rejected, not thrown", () => {
+    const { dir, clean } = tmpProjectWithNexus();
+    try {
+      const b = buildBundle(dir, { now: NOW });
+      const short = JSON.parse(JSON.stringify(b)); short.integrity.hash = "abcd";
+      assert.equal(verifyBundle(short).hashOk, false);
+      const nonhex = JSON.parse(JSON.stringify(b)); nonhex.integrity.hash = "zz".repeat(32);
+      assert.equal(verifyBundle(nonhex).hashOk, false);
+    } finally { clean(); }
+  });
+});

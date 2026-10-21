@@ -1106,6 +1106,7 @@ ipcMain.handle("subdomains:find", async (_e, domain) => {
     const r = await fetch("https://crt.sh/?q=%25." + encodeURIComponent(domain) + "&output=json", { signal: ctrl.signal, headers: { "User-Agent": "Darknode" } });
     const txt = await r.text(); let data;
     try { data = JSON.parse(txt); } catch { return { ok: false, error: "crt.sh is busy — try again in a moment" }; }
+    if (!Array.isArray(data)) return { ok: false, error: "crt.sh is busy — try again in a moment" };
     const set = new Set();
     for (const e of data) for (const n of String(e.name_value || "").split("\n")) {
       const s = n.trim().toLowerCase();
