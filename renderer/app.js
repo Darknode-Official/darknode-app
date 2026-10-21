@@ -3925,7 +3925,7 @@ ${ollamaLine}`;
       </div>`;
     S.sysinfo().then((s) => { const e = $("#ab-engine", el); if (e) e.textContent = "Electron " + (s.electron || "?") + " · Node " + (s.node || "?"); const v = $("#ab-version", el); if (v) v.textContent = s.version || "unknown"; });
     { const b = $("#ab-site", el); if (b) b.onclick = () => S.openExternal("https://darknode.ai"); }
-    { const b = $("#ab-docs", el); if (b) b.onclick = () => S.openExternal("https://darknode-a61064a5.mintlify.app"); }
+    { const b = $("#ab-docs", el); if (b) b.onclick = () => S.openExternal("https://darknode.ai/#docs"); }
     $("#ac", el).onclick = (e) => { const b = e.target.closest(".swatch"); if (b) applyAccent(b.dataset.c); };
     $("#tp", el).onclick = (e) => { const b = e.target.closest(".theme-chip"); if (b) applyPreset(b.dataset.acc, b.dataset.acc2); };
     const seg = $("#th", el);
@@ -4051,8 +4051,8 @@ darknode api stop</code></pre>
         </div>
       </div>
       <div class="card">
-        <div class="card-h">Cloud API</div>
-        <p class="dim" style="font-size:.85rem">The cloud-hosted API is available at <code>https://darknode-api.onrender.com</code>. Manage your API key and view usage on the Darknode website under the API tab.</p>
+        <div class="card-h">API Key &amp; Dashboard</div>
+        <p class="dim" style="font-size:.85rem">Create and manage your API key, and view usage, on the Darknode website under the API tab. The API also runs locally — see the quickstart above.</p>
         <div style="display:flex;gap:8px;margin-top:10px">
           <button class="btn ghost sm" id="apiWebBtn">Open API dashboard</button>
         </div>
