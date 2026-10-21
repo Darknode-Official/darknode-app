@@ -103,6 +103,10 @@ group("recon: targets — export", () => {
     assert.ok(T.resultsToCsv([{ host: "+1", port: 1, service: "@cmd", banner: "-2+3" }])
       .split("\n")[1].split(",").every((c) => !/^[=+\-@]/.test(c.replace(/^"/, ""))));
   });
+  test("a lone carriage return in a cell is quoted (not an unquoted row break)", () => {
+    const cell = T.resultsToCsv([{ host: "h1", port: 80, service: "http", banner: "ab\rcd" }]).split("\n")[1];
+    assert.ok(cell.includes('"ab\rcd"'), "the \\r cell must be wrapped in quotes");
+  });
   test("JSON export is valid and carries results + open count", () => {
     const obj = JSON.parse(T.resultsToJson(rows, { target: "h1" }));
     assert.equal(obj.open, 2);

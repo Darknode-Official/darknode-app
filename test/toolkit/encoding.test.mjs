@@ -89,6 +89,12 @@ group("encoding: url / html", () => {
     assert.equal(E.htmlDecode("a&#1114112;b"), "a&#1114112;b");
     assert.equal(E.htmlDecode("ok&#65;&#1114112;"), "okA&#1114112;");
   });
+  test("an entity named like an Object member is left intact, not a native function", () => {
+    assert.equal(E.htmlDecode("&toString;"), "&toString;");
+    assert.equal(E.htmlDecode("&constructor;"), "&constructor;");
+    assert.equal(E.htmlDecode("&valueOf;"), "&valueOf;");
+    assert.equal(E.htmlDecode("&amp;"), "&");          // control: a real entity still decodes
+  });
 });
 
 group("encoding: rot / morse", () => {
@@ -105,5 +111,9 @@ group("encoding: rot / morse", () => {
     assert.equal(E.toMorse("HI THERE"), ".... .. / - .... . .-. .");
     assert.equal(E.fromMorse("... --- ..."), "SOS");
     assert.equal(E.fromMorse(".... .. / - .... . .-. ."), "HI THERE");
+  });
+  test("a token equal to an Object member name decodes to empty, not a native function", () => {
+    assert.equal(E.fromMorse("toString"), "");
+    assert.equal(E.fromMorse("constructor"), "");
   });
 });
