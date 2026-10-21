@@ -61,4 +61,9 @@ group("cvss: parsing + errors", () => {
   test("empty input throws", () => {
     assert.throws(() => C.parseVector(""));
   });
+  test("a multi-char or empty metric value throws (no substring bypass -> NaN -> Critical)", () => {
+    assert.throws(() => C.score("CVSS:3.1/AV:LP/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"));
+    assert.throws(() => C.parseVector("CVSS:3.1/AV:/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"));
+    assert.throws(() => C.score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:HL/I:H/A:H"));
+  });
 });

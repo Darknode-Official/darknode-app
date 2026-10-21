@@ -120,3 +120,20 @@ group("recon: targets — ip helpers", () => {
     assert.equal(T.isIpv4("10.0.0.1"), true);
   });
 });
+
+group("recon: targets — URL vs CIDR disambiguation", () => {
+  test("a scheme'd URL with a numeric last path segment is one host, not a /24", () => {
+    const r = T.expandTargets("http://1.2.3.4/24");
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.groups[0].hosts, ["1.2.3.4"]);
+  });
+  test("a host URL with a numeric path is one host, not dropped as a bad CIDR", () => {
+    const r = T.expandTargets("https://test.darknode.ai/8080");
+    assert.equal(r.total, 1);
+    assert.deepEqual(r.groups[0].hosts, ["test.darknode.ai"]);
+    assert.equal(r.errors.length, 0);
+  });
+  test("a bare a.b.c.d/nn (no scheme) still expands as a CIDR", () => {
+    assert.equal(T.expandTargets("10.0.0.0/30").total, 4);
+  });
+});

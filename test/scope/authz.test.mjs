@@ -93,3 +93,12 @@ group("scope: validateRecord rejects incomplete authorizations", () => {
     assert.ok(validateRecord({ targets: ["a.com"], activityClasses: ["active"], from: "2026-01-01", to: "2026-02-01", attestedBy: "owner" }).ok);
   });
 });
+
+group("authz: unknown-kind fail-closed (no prototype leak)", () => {
+  test("a prototype-member kind classifies active and is denied with no record", () => {
+    for (const kind of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      assert.equal(classifyActivity(kind), "active", kind + " must classify as active");
+      assert.equal(authorize({ kind, target: "victim.com" }, []).allowed, false, kind + " must be denied with no record");
+    }
+  });
+});

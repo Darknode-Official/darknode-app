@@ -139,3 +139,17 @@ group("recon: analysis — header scoring (value-based)", () => {
     assert.equal(r.checks.find((c) => c.key === "x-frame-options").points, 1);
   });
 });
+
+group("recon: analysis — SPF a/mx CIDR lookups + DMARC pct", () => {
+  test("a/cidr and mx/cidr mechanisms count toward the 10-lookup limit", () => {
+    const terms = Array.from({ length: 6 }, () => "a/24 mx/24").join(" ");
+    const r = A.parseSpf([["v=spf1 " + terms + " ~all"]]);
+    assert.equal(r.lookups, 12);
+    assert.ok(r.issues.some((i) => /10 DNS-lookup/.test(i)));
+  });
+  test("a non-numeric DMARC pct defaults to 100, not NaN", () => {
+    const r = A.parseDmarc([["v=DMARC1; p=reject; pct=foo; rua=mailto:x@test.darknode.ai"]]);
+    assert.equal(r.pct, 100);
+    assert.notOk(r.issues.some((i) => /only applies to/.test(i)));
+  });
+});
