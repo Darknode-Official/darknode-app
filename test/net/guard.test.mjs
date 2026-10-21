@@ -23,7 +23,8 @@ group("net.guard: isPrivateHost blocks private/internal literals", () => {
 });
 
 group("net.guard: isPrivateHost allows public hosts", () => {
-  const ALLOW = ["8.8.8.8", "1.1.1.1", "93.184.216.34", "example.com", "api.github.com", "172.32.0.1", "11.0.0.1"];
+  const ALLOW = ["8.8.8.8", "1.1.1.1", "93.184.216.34", "example.com", "api.github.com", "172.32.0.1", "11.0.0.1",
+    "fcc.gov", "fc2.com", "fdroid.org", "fe80host.com", "fd.example.com"]; // public NAMES starting fc/fd/fe80 are not IPv6 ULA/link-local literals
   for (const h of ALLOW) test(`allows ${h}`, () => assert.notOk(isPrivateHost(h), `${h} should be allowed`));
 });
 

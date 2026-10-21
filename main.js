@@ -1341,9 +1341,13 @@ ipcMain.handle("vm:screendump", async (_e, { id }) => {
     try {
       const buf = fs.readFileSync(ppm);
       // parse P6 PPM: "P6\n<w> <h>\n255\n<rgb bytes>"
-      let p = 0; const tok = () => { while (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d) p++; let s = p; while (buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
+      // Bounds-checked tokenizer: a truncated/empty PPM must not spin the main
+      // event loop forever (buf[p] === undefined would otherwise never match a
+      // delimiter). Each loop stops at end-of-buffer.
+      let p = 0; const tok = () => { while (p < buf.length && (buf[p] === 0x20 || buf[p] === 0x0a || buf[p] === 0x09 || buf[p] === 0x0d)) p++; let s = p; while (p < buf.length && buf[p] !== 0x20 && buf[p] !== 0x0a && buf[p] !== 0x09 && buf[p] !== 0x0d) p++; return buf.slice(s, p).toString(); };
       if (tok() !== "P6") return { ok: false, error: "bad ppm" };
       const w = +tok(), h = +tok(); tok(); p++; // skip maxval + single whitespace
+      if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0 || w * h > 33_000_000) return { ok: false, error: "bad ppm" };
       const rgb = buf.slice(p); const bgra = Buffer.alloc(w * h * 4);
       for (let i = 0, j = 0; i < w * h; i++) { bgra[j] = rgb[i * 3 + 2]; bgra[j + 1] = rgb[i * 3 + 1]; bgra[j + 2] = rgb[i * 3]; bgra[j + 3] = 255; j += 4; }
       const { nativeImage } = require("electron");

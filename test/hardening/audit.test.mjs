@@ -311,6 +311,12 @@ group("audit: exporters", () => {
     assert.equal(lines[0], "id,title,cisRef,status,severity,category,evidence,fix");
     assert.ok(csv.includes('"Disk, encryption"'));
   });
+  test("CSV neutralizes spreadsheet formula injection in evidence/fix", () => {
+    const rep = { results: [{ id: "x", title: "t", cisRef: "c", status: "fail", severity: "high", category: "linux", evidence: "=cmd|'/C calc'!A1", fix: "@SUM(1,1)" }] };
+    const row = toCSV(rep).split("\n")[1];
+    for (const cell of row.split(",")) assert.ok(!/^[=+\-@]/.test(cell.replace(/^"/, "")), `cell must not start a formula: ${cell}`);
+    assert.ok(row.includes("'=cmd") && row.includes("'@SUM"), "formulas must be quote-prefixed");
+  });
   test("text report has header, score, and a FAIL line", () => {
     const txt = toText(report);
     assert.ok(txt.includes("WORKSTATION SECURITY AUDIT"));
