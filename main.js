@@ -289,7 +289,10 @@ ipcMain.handle("net:get", async (_e, opts) => {
       // safeFetch validates the initial host AND every redirect hop (SSRF-safe).
       const r = await safeFetch(url, { method: method || "GET", headers: Object.assign({ "User-Agent": "Darknode/1.0" }, headers || {}), body: body || undefined, signal: ctrl.signal });
       const ct = r.headers.get("content-type") || "";
-      const data = ct.includes("json") ? await r.json().catch(() => null) : await r.text();
+      // Cap the response body (like http:request does) so a huge/hostile reply
+      // can't OOM the main process; parse JSON from the capped text ourselves.
+      const text = await readTextCapped(r, 1_000_000);
+      const data = ct.includes("json") ? (() => { try { return JSON.parse(text); } catch (_) { return null; } })() : text;
       return { ok: r.ok, status: r.status, data };
     } finally { clearTimeout(to); }
   } catch (e) { return { ok: false, status: 0, error: e.name === "AbortError" ? "timed out" : e.message }; }
@@ -1037,11 +1040,17 @@ ipcMain.handle("git:branches", async (_e, dir) => {
     return { ok: true, current: cur, branches: b.stdout.trim().split("\n").filter(Boolean) };
   } catch (e) { return { ok: false, error: e.message }; }
 });
+// A branch arg that begins with "-" would be read by git as a flag, not a
+// branch (e.g. "-f"/"--force" force-switches and discards the working tree), so
+// reject it up front — git() uses execFile, so this is option, not shell, abuse.
+const badBranch = (b) => !b || typeof b !== "string" || /^-/.test(b);
 ipcMain.handle("git:checkout", async (_e, { dir, branch }) => {
+  if (badBranch(branch)) return { ok: false, error: "invalid branch name" };
   try { await git(["-C", dir, "checkout", branch]); return { ok: true }; }
   catch (e) { return { ok: false, error: scrub(e.stderr || e.message) }; }
 });
 ipcMain.handle("git:checkoutNew", async (_e, { dir, branch }) => {
+  if (badBranch(branch)) return { ok: false, error: "invalid branch name" };
   try { await git(["-C", dir, "checkout", "-b", branch]); return { ok: true }; }
   catch (e) { return { ok: false, error: scrub(e.stderr || e.message) }; }
 });
@@ -1131,6 +1140,9 @@ ipcMain.handle("fs:list", async (_e, dir) => {
 ipcMain.handle("fs:read", async (_e, file) => {
   try {
     const st = await fs.promises.stat(file);
+    // Only regular files: a FIFO/device (e.g. /dev/zero, size 0) slips past the
+    // size guard and then readFile blocks forever / exhausts memory.
+    if (!st.isFile()) return { ok: false, error: "not a regular file" };
     if (st.size > 5e6) return { ok: false, error: "file too large (" + Math.round(st.size / 1e6) + " MB)" };
     return { ok: true, path: file, data: await fs.promises.readFile(file, "utf8") };
   } catch (e) { return { ok: false, error: e.message }; }
