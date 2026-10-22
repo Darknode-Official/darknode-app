@@ -4136,7 +4136,7 @@ darknode api stop</code></pre>
       </div>
 
       <div class="card" id="doc-about"><div class="lbl">About</div>
-        <p class="muted"><b>Darknode</b> v2.29 &mdash; the multi-engine AI coding &amp; security suite. Engines: Claude · local Ollama · OpenCode.</p>
+        <p class="muted"><b>Darknode</b> v<span id="doc-about-ver">2.54.0</span> &mdash; the multi-engine AI coding &amp; security suite. Engines: Claude · local Ollama · OpenCode.</p>
         <details class="doc-d"><summary>Terms of Service</summary><p class="muted">Provided "as is", without warranty; all rights reserved. You are solely responsible for lawful, authorized use. To the maximum extent permitted by law the authors are not liable for any damages arising from use, including data loss or misuse. Cloud model usage is governed by your provider's terms.</p></details>
         <details class="doc-d"><summary>Privacy Policy</summary><p class="muted">The app runs on your machine; project state lives in <code>.nexus/</code>. We do not collect your code or prompts. Cloud engines send your prompt to the provider you chose (masked when <code>/redact</code> is on). No personal data is sold.</p></details>
         <details class="doc-d"><summary>Acceptable Use Policy</summary><p class="muted">Do not use Darknode against systems you don't own or lack written authorization to test, to develop malware for malicious use, to run denial-of-service attacks, or to violate any law or third-party right. Intended for authorized pentesting, CTFs, research and defense.</p></details>
@@ -4148,6 +4148,8 @@ darknode api stop</code></pre>
         <div class="set-row"><code>2.28</code><span class="muted">Autonomous Assistant: structured-output loop, permissions, attack playbooks, MCP client, vision input.</span></div>
         <div class="set-row"><code>2.2x</code><span class="muted">Recon/scanner/fuzzer, VM lab runner, threat intel, code workbench, live terminals.</span></div>
       </div>`;
+    // Keep the About version in sync with the real app version (never hardcode it).
+    S.sysinfo().then((s) => { const v = $("#doc-about-ver", el); if (v && s && s.version) v.textContent = s.version; }).catch(() => {});
   },
 };
 
