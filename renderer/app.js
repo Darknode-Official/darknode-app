@@ -185,11 +185,25 @@ async function ensureScope(kind, rawTarget) {
     };
   });
 }
-// Minimal markdown -> HTML (code fences with copy, inline code, bold).
+// Minimal markdown -> HTML: fenced code (with copy), real <ul>/<ol> lists,
+// paragraphs, inline code and bold. Lists render as proper list elements the
+// way the website does, not literal "- " lines.
+function mdInline(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>"); }
 function mdHtml(t) {
   return String(t).split("```").map((seg, i) => {
     if (i % 2 === 1) { const code = seg.replace(/^[\w+-]*\n/, ""); return `<pre class="code-block"><button class="cb-copy">copy</button><code>${esc(code)}</code></pre>`; }
-    return esc(seg).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+    let html = "", list = null, para = [];
+    const flushPara = () => { if (para.length) { html += "<p>" + para.map(mdInline).join("<br>") + "</p>"; para = []; } };
+    const flushList = () => { if (list) { html += "<" + list.tag + ">" + list.items.map((x) => "<li>" + mdInline(x) + "</li>").join("") + "</" + list.tag + ">"; list = null; } };
+    for (const ln of seg.split("\n")) {
+      const ul = ln.match(/^\s*[-*]\s+(.*)$/), ol = ln.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (ul) { flushPara(); if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; } list.items.push(ul[1]); }
+      else if (ol) { flushPara(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; } list.items.push(ol[1]); }
+      else if (ln.trim() === "") { flushPara(); flushList(); }
+      else { flushList(); para.push(ln); }
+    }
+    flushPara(); flushList();
+    return html;
   }).join("");
 }
 // Single global streaming-token listener; the active run sets _ollamaTokenCb.
@@ -4403,7 +4417,7 @@ document.addEventListener("keydown", (e) => {
 // target persistence + wiring
 (function () { const t = $("#target"); if (t) { try { t.value = localStorage.getItem("s_target") || ""; } catch (_) {} const syncTb = () => { const sb = $("#sb-target"); if (sb) sb.textContent = t.value ? "target: " + t.value : ""; }; t.addEventListener("input", () => { try { localStorage.setItem("s_target", t.value); } catch (_) {} syncTb(); }); syncTb(); } })();
 // status bar: host + version, live clock
-S.sysinfo().then((s) => { const h = $("#sb-hosttxt"); if (h) h.textContent = s.hostname + " · " + s.platform; const v = $("#sb-ver"); if (v) v.textContent = "v" + (s.version || ""); });
+S.sysinfo().then((s) => { s = s || {}; const h = $("#sb-hosttxt"); if (h) h.textContent = [s.hostname, s.platform].filter(Boolean).join(" · ") || "—"; const v = $("#sb-ver"); if (v) v.textContent = s.version ? "v" + s.version : ""; }).catch(() => {});
 (function () { const c = $("#sb-clock"); if (!c) return; const tick = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); c.textContent = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); }; tick(); setInterval(tick, 1000); })();
 // in-app update check
 if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { const sb = $("#sb-ver"); if (sb) { sb.textContent = "v" + r.current + " → v" + r.latest + " available"; sb.classList.add("sb-update"); sb.title = "A newer version is available — open Downloads"; sb.style.cursor = "pointer"; sb.onclick = () => S.openExternal("https://github.com/Darknode-Official/darknode-app/releases/latest"); } _toast && _toast("Update available: v" + r.latest + " — see Downloads", 5000); } }).catch(() => {});
@@ -4432,7 +4446,7 @@ if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { co
   }); } }
 $("#nav").onclick = (e) => { const b = e.target.closest(".nav-item"); if (b) go(b.dataset.sec); };
 { const cr = $("#crumbs"); if (cr) cr.onclick = (e) => { const b = e.target.closest("[data-crumb]"); if (b) go(b.dataset.crumb); }; }
-S.sysinfo().then((s) => { $("#side-foot").textContent = s.hostname + " · " + s.platform; });
+S.sysinfo().then((s) => { s = s || {}; const f = $("#side-foot"); if (f) f.textContent = [s.hostname, s.platform].filter(Boolean).join(" · ") || "—"; }).catch(() => {});
 
 // ---- save the exact frame (Ctrl+S): section + typed text, restored on next launch ----
 const _toast = (msg, ms) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in")); setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, ms || 2400); };
