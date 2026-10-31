@@ -30,7 +30,7 @@
     "publish:release": "bash scripts/publish-release.sh"
   },
   "devDependencies": {
-    "electron": "^41.7.1",
+    "electron": "^45.1.0",
     "electron-builder": "^26.15.3"
   },
   "build": {
