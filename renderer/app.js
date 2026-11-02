@@ -1,72 +1,7 @@
 // Darknode desktop renderer. Talks to the main process only via window.darknode.
-// Warp-speed neon hyperjump on the boot splash (runs until the splash fades).
-(function bootWarp() {
-  // Skip the boot animation when launched with the no-boot flag (e.g. auto-start inside Darknode OS).
-  try { if (window.darknode && window.darknode.noBootAnim) { const bs = document.getElementById("bootscreen"); if (bs) bs.remove(); return; } } catch (_) {}
-  const c = document.getElementById("bootrain"); if (!c || !c.getContext) return;
-  const ctx = c.getContext("2d");
-  const size = () => { c.width = c.offsetWidth; c.height = c.offsetHeight; };
-  size(); window.addEventListener("resize", size);
-  const reduce = (() => { try { return matchMedia("(prefers-reduced-motion:reduce)").matches; } catch (e) { return false; } })();
-  // 3D warp-speed neon streak field (cyan / violet / gold) rushing toward the camera.
-  const N = 340, stars = [], t0b = performance.now();
-  const mk = (s) => { s = s || {};
-    s.x = (Math.random() - .5) * c.width; s.y = (Math.random() - .5) * c.height;
-    s.z = Math.random() * c.width; s.pz = s.z;
-    const r = Math.random(); s.col = r < .6 ? "0,234,255" : r < .85 ? "176,38,255" : "255,210,63";
-    return s; };
-  for (let i = 0; i < N; i++) stars.push(mk());
-  let raf;
-  const draw = () => {
-    const el = (performance.now() - t0b) / 1000;
-    const speed = 5 + el * el * 8;                 // ramp: gentle boot → hyperjump
-    ctx.fillStyle = "rgba(5,7,13,0.30)"; ctx.fillRect(0, 0, c.width, c.height);
-    const cx = c.width / 2, cy = c.height / 2, foc = Math.min(c.width, c.height) * 0.9;
-    ctx.lineCap = "round";
-    for (let i = 0; i < N; i++) {
-      const s = stars[i]; s.pz = s.z; s.z -= speed;
-      if (s.z < 1) { mk(s); continue; }
-      const px = cx + s.x * (foc / s.pz), py = cy + s.y * (foc / s.pz);
-      const k = foc / s.z, x = cx + s.x * k, y = cy + s.y * k;
-      const a = Math.min(1, (c.width - s.z) / c.width * 1.4);
-      ctx.strokeStyle = "rgba(" + s.col + "," + a + ")";
-      ctx.lineWidth = Math.max(.4, (1 - s.z / c.width) * 3.2);
-      ctx.shadowBlur = 12; ctx.shadowColor = "rgba(" + s.col + ",.9)";
-      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(x, y); ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120 + el * 55);   // charging energy core
-    g.addColorStop(0, "rgba(0,234,255," + (0.10 + Math.min(.3, el * .07)) + ")");
-    g.addColorStop(1, "rgba(0,234,255,0)");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, c.width, c.height);
-    if (!reduce) raf = requestAnimationFrame(draw);
-  };
-  draw();
-  setTimeout(() => cancelAnimationFrame(raf), 3300);
-  // live boot % counter, synced to the ~2.3s progress bar
-  const pct = document.getElementById("bootpct");
-  if (pct) { const t0 = performance.now(); const tick = () => { const p = Math.min(100, Math.round(((performance.now() - t0) / 2300) * 100)); pct.textContent = p + "%"; if (p < 100) requestAnimationFrame(tick); }; tick(); }
-  // logo text-scramble / decode reveal
-  const logo = document.querySelector(".boot-logo");
-  if (logo) {
-    const target = ">_ DARKNODE", pool = "!<>-_\\/[]{}=+*^?#01ABCDEF", total = 38; let frame = 0;
-    const id = setInterval(() => {
-      frame++; let out = "";
-      for (let i = 0; i < target.length; i++) { if (target[i] === " ") { out += " "; continue; } out += (i < (frame / total) * target.length) ? target[i] : pool[(Math.random() * pool.length) | 0]; }
-      logo.textContent = out;
-      if (frame >= total) { clearInterval(id); logo.textContent = target; }
-    }, 26);
-  }
-  // live system readout on the splash: host, platform, local model count
-  try {
-    const B = window.darknode;
-    if (B && B.sysinfo) Promise.all([B.sysinfo(), (B.ollama ? B.ollama("/api/tags").catch(() => null) : Promise.resolve(null))]).then(([s, r]) => {
-      const el = document.getElementById("bootsys"); if (!el) return;
-      const models = (r && r.ok && r.data && r.data.models) ? r.data.models.length : null;
-      el.textContent = [(s && s.hostname) || "host", (s && s.platform) || "", models != null ? models + " local models" : ""].filter(Boolean).join("   ·   ");
-    }).catch(() => {});
-  } catch (_) {}
-})();
+// Boot splash: a plain logo lockup and a hairline progress bar (CSS only).
+// Removed outright when launched with the no-boot flag (e.g. auto-start inside Darknode OS).
+try { if (window.darknode && window.darknode.noBootAnim) { const bs = document.getElementById("bootscreen"); if (bs) bs.remove(); } } catch (_) {}
 
 const S = window.darknode;
 

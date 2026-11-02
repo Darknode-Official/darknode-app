@@ -1557,3 +1557,20 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 :root[data-skin="graphite"] .f:focus{border-color:var(--line-2);box-shadow:none}
 /* Ghost buttons: quiet grey hover like ChatGPT secondary buttons */
 :root[data-skin="graphite"] .btn.ghost:hover{background:color-mix(in srgb,var(--txt) 6%,transparent);border-color:var(--line-2);color:var(--txt)}
+
+/* ============================================================
+   Boot screen — plain (2026-11-01). Logo lockup + a hairline progress bar
+   at the top edge, matching the website boot. Replaces the warp field,
+   glitch logo, % counter, terminal log and ACCESS GRANTED. Background
+   colors unchanged (classic base / graphite #171717).
+   ============================================================ */
+#bootscreen{background:#05070d;display:flex;align-items:center;justify-content:center;transform:none;filter:none;animation:bpOut .3s ease 1.5s forwards}
+#bootscreen::before,#bootscreen::after{display:none!important;content:none!important}
+@keyframes bpOut{to{opacity:0;visibility:hidden;pointer-events:none}}
+.bp-lockup{display:flex;align-items:center;gap:14px}
+.bp-icon{width:40px;height:40px;display:block}
+.bp-name{font-family:var(--font-display,'Sora',ui-sans-serif,system-ui,sans-serif);font-size:28px;font-weight:600;letter-spacing:-.01em;color:var(--txt)}
+.bp-bar{position:absolute;top:0;left:0;right:0;height:2px;overflow:hidden}
+.bp-bar>span{display:block;height:100%;width:0;background:var(--acc);animation:bpFill 1.4s cubic-bezier(.4,.8,.3,1) forwards}
+@keyframes bpFill{to{width:100%}}
+@media (prefers-reduced-motion:reduce){.bp-bar>span{animation:none;width:100%}}
