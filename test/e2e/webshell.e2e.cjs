@@ -78,6 +78,8 @@ async function run(w) {
   const desk = await ev("JSON.stringify(window.darknode && window.darknode.desktop)");
   check("bridge: window.darknode.desktop in the top frame", /"caps"/.test(desk || "") && JSON.parse(desk).version === pkg.version, desk);
   check("bridge: auth.google is a function", await ev("typeof (window.darknode && window.darknode.auth && window.darknode.auth.google) === 'function'"));
+  const upd = await ev("window.darknode.native.update().then((r) => JSON.stringify(r))");
+  check("update check reachable from the website and reads the published release", (() => { try { const r = JSON.parse(upd); return r.ok === true && /^\d+\.\d+\.\d+$/.test(r.latest) && r.current === pkg.version && /releases\/latest$/.test(r.url); } catch (_) { return false; } })(), upd);
   check("bridge: does not expose the classic native surface", await ev("!('run' in window.darknode) && !('fsWrite' in window.darknode) && !('ptySpawn' in window.darknode)"));
   check("website namespace still mutable (assistant API attaches)", await until(() => ev("typeof window.darknode.control === 'function' || typeof window.darknode.openHelp === 'function'"), 15000));
   const tb = await ev("JSON.stringify((() => { const t = document.getElementById('topbar'); const cs = getComputedStyle(t); return { region: cs.getPropertyValue('-webkit-app-region') || cs.getPropertyValue('app-region'), pr: parseFloat(cs.paddingRight), wco: navigator.windowControlsOverlay ? navigator.windowControlsOverlay.visible : null }; })())");

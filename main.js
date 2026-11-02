@@ -108,7 +108,7 @@ const IPC_CTX = SHELL === "web"
   ? { mode: "web", appOrigin: webshell.APP_ORIGIN }
   : { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
 // Capabilities the web shell really exposes (window.darknode.desktop.caps).
-const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native", "device"];
+const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native", "device", "update"];
 const WEB_PARTITION = "persist:darknode";
 // The native tools window (web shell only) runs the app's own bundled classic
 // renderer, never website content, so it keeps the full classic surface.
@@ -410,7 +410,7 @@ ipcMain.handle("app:checkUpdate", async () => {
     if (tag) vers.push(tag);
     vers.sort(cmp);
     const latest = vers.length ? vers[vers.length - 1] : cur;
-    return { ok: true, current: cur, latest, update: cmp(latest, cur) > 0 };
+    return { ok: true, current: cur, latest, update: cmp(latest, cur) > 0, url: "https://github.com/Darknode-Official/darknode-app/releases/latest" };
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
