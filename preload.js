@@ -36,7 +36,16 @@ if (SHELL === "web") {
       // Recolour the native window-controls overlay to match the page's top bar.
       titlebar: (opts) => ipcRenderer.invoke("shell:titlebar", opts || {}),
       // Open the native tools window (terminal, scanner, VMs...), optionally on one section.
-      native: { open: (sec) => ipcRenderer.invoke("native:open", typeof sec === "string" ? sec : "") },
+      native: {
+        open: (sec, extra) => ipcRenderer.invoke("native:open", typeof sec === "string" ? sec : "", extra && typeof extra.type === "string" ? { type: extra.type } : undefined),
+        // Read-only device capabilities for the Deck's "This Computer" page.
+        sysinfo: () => ipcRenderer.invoke("sysinfo"),
+        audit: () => ipcRenderer.invoke("audit:run"),
+        dns: (host) => ipcRenderer.invoke("dns:lookup", String(host || "")),
+        whois: (q) => ipcRenderer.invoke("whois:query", String(q || "")),
+        tls: (host, port) => ipcRenderer.invoke("tls:cert", { host: String(host || ""), port: Number(port) || 443 }),
+        models: () => ipcRenderer.invoke("local:models"),
+      },
     };
     contextBridge.executeInMainWorld({
       func: (bridge) => {
@@ -94,7 +103,7 @@ contextBridge.exposeInMainWorld("darknode", {
   closeNow: () => ipcRenderer.invoke("win:close-now"),
   onConfirmClose: (cb) => ipcRenderer.on("app:confirm-close", () => cb()),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
-  onNativeGo: (cb) => ipcRenderer.on("native:go", (_e, sec) => { try { cb(String(sec || "")); } catch (_) {} }),
+  onNativeGo: (cb) => ipcRenderer.on("native:go", (_e, m) => { try { cb(String((m && m.sec) || ""), typeof (m && m.type) === "string" ? m.type : ""); } catch (_) {} }),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),
