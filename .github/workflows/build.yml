@@ -18,8 +18,16 @@ jobs:
       # tag; it needs a token to upload the installers + latest*.yml metadata
       # (the latter is what the in-app auto-updater reads).
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DARKNODE_WEB: ${{ github.workspace }}/_web/public
     steps:
       - uses: actions/checkout@v4
+      # The app ships the website (the Deck) as its UI: scripts/sync-web.mjs copies
+      # darknode-web/public into web/ before packaging, so fetch it here too.
+      - uses: actions/checkout@v4
+        with:
+          repository: Darknode-Official/darknode-web
+          path: _web
+          sparse-checkout: public
       - uses: actions/setup-node@v4
         with:
           node-version: 20

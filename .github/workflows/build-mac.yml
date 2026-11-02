@@ -17,8 +17,17 @@ jobs:
           - { os: macos-14, arch: x64 }    # Intel — cross-built on arm64 (macos-13 runners are scarce)
           - { os: macos-14, arch: arm64 }   # Apple Silicon
     runs-on: ${{ matrix.os }}
+    env:
+      DARKNODE_WEB: ${{ github.workspace }}/_web/public
     steps:
       - uses: actions/checkout@v4
+      # The app ships the website (the Deck) as its UI: scripts/sync-web.mjs copies
+      # darknode-web/public into web/ before packaging, so fetch it here too.
+      - uses: actions/checkout@v4
+        with:
+          repository: Darknode-Official/darknode-web
+          path: _web
+          sparse-checkout: public
       - uses: actions/setup-node@v4
         with:
           node-version: 20
