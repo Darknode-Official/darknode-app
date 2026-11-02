@@ -45,6 +45,8 @@ if (SHELL === "web") {
         whois: (q) => ipcRenderer.invoke("whois:query", String(q || "")),
         tls: (host, port) => ipcRenderer.invoke("tls:cert", { host: String(host || ""), port: Number(port) || 443 }),
         models: () => ipcRenderer.invoke("local:models"),
+        // Is a newer desktop app published? -> { ok, current, latest, update, url }
+        update: () => ipcRenderer.invoke("app:checkUpdate"),
       },
     };
     contextBridge.executeInMainWorld({
