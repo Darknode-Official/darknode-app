@@ -1,6 +1,6 @@
 {
   "name": "darknode-app",
-  "version": "2.55.1",
+  "version": "2.55.2",
   "description": "Darknode — desktop security console (runs tools, a live terminal, and local AI)",
   "main": "main.js",
   "author": "Darknode <contact@darknode.ai>",
@@ -31,7 +31,7 @@
     "predist:win": "node scripts/sync-web.mjs",
     "dist:win": "electron-builder --win nsis",
     "predist:mac": "node scripts/sync-web.mjs",
-    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:mac": "electron-builder --mac dmg zip --universal",
     "predist": "node scripts/sync-web.mjs",
     "dist": "electron-builder -mwl",
     "publish:release": "bash scripts/publish-release.sh"
@@ -77,7 +77,8 @@
         "dmg",
         "zip"
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/**"
     },
     "publish": [
       {
