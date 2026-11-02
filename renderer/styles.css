@@ -74,12 +74,6 @@ h1,h2,h3,.brand-name,.boot-logo,.tb-title,.page-title,.sec-title,.card-title{fon
    Layout shell
    ============================================================ */
 .shell{display:flex;height:100vh;position:relative;isolation:isolate}
-.shell::before{
-  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
-  background:
-    radial-gradient(900px 500px at 12% -8%,color-mix(in srgb,var(--acc) 12%,transparent),transparent 60%),
-    radial-gradient(800px 480px at 100% 0%,color-mix(in srgb,var(--acc-2) 10%,transparent),transparent 55%);
-}
 .sidebar{
   width:232px;flex:none;display:flex;flex-direction:column;
   padding:16px 12px 12px;background:color-mix(in srgb,var(--card) 55%,var(--bg));
@@ -91,7 +85,7 @@ h1,h2,h3,.brand-name,.boot-logo,.tb-title,.page-title,.sec-title,.card-title{fon
 .brand-tag{font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--acc);
   border:1px solid var(--acc-line);border-radius:5px;padding:2px 5px;margin-left:auto}
 
-#nav{display:flex;flex-direction:column;gap:14px;overflow-y:auto;padding-right:2px}
+#nav{display:flex;flex-direction:column;gap:14px;flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:2px;padding-bottom:6px}
 .nav-group{display:flex;flex-direction:column;gap:1px}
 .nav-group-h{font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--mut);padding:2px 10px 6px}
 .nav-item{
@@ -680,15 +674,11 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
    Per-section accent theming (v6) — --sec tints headings/nav/strip
    ============================================================ */
 :root{--sec:var(--acc)}
-/* section H1 picks up the section hue */
-#page > h1:first-child{background:linear-gradient(120deg,var(--txt),color-mix(in srgb,var(--txt) 45%,var(--sec)));
-  -webkit-background-clip:text;background-clip:text;color:transparent}
+/* page H1: flat solid heading (no gradient text) */
+#page > h1:first-child{color:var(--txt)}
 /* active nav item retints to the section hue, with a smooth glow */
 .nav-item.active{color:var(--sec);background:color-mix(in srgb,var(--sec) 15%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sec) 40%,var(--line))}
 .nav-item.active::before{background:var(--sec);box-shadow:0 0 12px var(--sec)}
-/* thin accent strip at the very top of the page content (static so it scrolls with the page, never slides over content) */
-#page::before{content:"";position:relative;display:block;height:2px;margin:-26px -30px 18px;z-index:2;
-  background:linear-gradient(90deg,transparent,var(--sec),transparent);opacity:.7;transition:background .3s var(--ease)}
 /* section headings tick uses the hue */
 .lbl{color:color-mix(in srgb,var(--sec) 70%,var(--mut))}
 
@@ -701,7 +691,6 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 :root[data-theme="light"] .btn{box-shadow:0 2px 12px -4px color-mix(in srgb,var(--acc) 45%,transparent),inset 0 1px 0 rgba(255,255,255,.4)}
 :root[data-theme="light"] .apphead{background:color-mix(in srgb,#fff 82%,transparent)}
 :root[data-theme="light"] .sidebar{background:color-mix(in srgb,#fff 70%,var(--bg))}
-:root[data-theme="light"] .shell::before{opacity:.6}
 :root[data-theme="light"] .dh-term-body{color:#cfe0f5}
 :root[data-theme="light"] .out,:root[data-theme="light"] pre.out{background:#0b1120;color:#d6e2f0;border-color:var(--line-2)}
 
@@ -826,13 +815,6 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 /* ============================================================
    CSS PLAN — Phase 5 (signature flourishes)
    ============================================================ */
-/* ambient aurora — subtle slow-drifting glow behind everything */
-.shell::after{content:"";position:fixed;inset:-15%;z-index:-1;pointer-events:none;opacity:.55;
-  background:
-    radial-gradient(620px 440px at 28% 26%,color-mix(in srgb,var(--acc) 11%,transparent),transparent 60%),
-    radial-gradient(560px 420px at 74% 72%,color-mix(in srgb,var(--acc-2) 9%,transparent),transparent 58%);
-  animation:aurora 26s ease-in-out infinite alternate}
-@keyframes aurora{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-3%,2%,0) scale(1.05)}100%{transform:translate3d(2%,-2%,0) scale(1)}}
 
 /* keyboard shortcuts overlay */
 .kbd-ov{position:fixed;inset:0;z-index:9000;background:rgba(4,8,15,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;animation:fade .16s var(--ease)}
@@ -1080,9 +1062,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
   --sh-2:0 10px 30px -14px rgba(20,20,30,.18);
 }
 
-/* Calm the canvas: drop the ambient glow + grid overlay */
-:root[data-skin="graphite"] .shell::before,
-:root[data-skin="graphite"] .shell::after,
+/* Calm the canvas: drop the grid overlay */
 :root[data-skin="graphite"] main::before{display:none!important}
 :root[data-skin="graphite"] .shell{background:var(--bg)}
 
