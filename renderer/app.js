@@ -4413,11 +4413,16 @@ function saveFrame() {
 }
 document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); saveFrame(); } });
 
+// the Deck (desktop web shell) can switch this window to another section
+if (S.onNativeGo) S.onNativeGo((sec) => { if (sections[sec]) go(sec); });
 // restore last frame (section + typed text), else last section
 (function () {
   let frame = null; try { frame = JSON.parse(localStorage.getItem("s_frame")); } catch (_) {}
   let last; try { last = localStorage.getItem("s_last_sec"); } catch (_) {}
-  const start = (frame && frame.sec && sections[frame.sec]) ? frame.sec : (last && sections[last] ? last : "home");
+  // The desktop app's Deck opens this window on a section (#sec=<id>).
+  const asked = (/^#sec=([a-z]+)$/.exec(location.hash) || [])[1];
+  if (asked && sections[asked]) frame = null;
+  const start = (asked && sections[asked]) ? asked : (frame && frame.sec && sections[frame.sec]) ? frame.sec : (last && sections[last] ? last : "home");
   go(start);
   if (frame && frame.fields && frame.sec === start) {
     setTimeout(() => { Object.entries(frame.fields).forEach(([id, v]) => { const el = page.querySelector("#" + (window.CSS && CSS.escape ? CSS.escape(id) : id)); if (el && v != null) { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); } }); }, 140);

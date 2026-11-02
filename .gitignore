@@ -7,3 +7,5 @@ darknode-cli/
 oauth.config.json
 
 BUILDLOG.md
+web/
+.cache/

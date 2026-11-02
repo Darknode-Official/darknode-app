@@ -1,6 +1,57 @@
 // Secure bridge: the only surface the renderer can touch.
+//
+// Two shells share this preload (main.js passes --dn-shell):
+//   web     - the packaged website on the app origin (D0). It gets ONLY the small
+//             desktop surface below, and only in the top-level frame on the exact
+//             app origin; tool iframes (?embed=1), auth popups and any other origin
+//             get nothing. The website already owns a mutable window.darknode
+//             namespace (its assistant attaches .control/.openHelp to it), so the
+//             surface is merged into that object instead of exposed as a frozen one.
+//   classic - the legacy renderer/index.html (DARKNODE_CLASSIC=1), which keeps the
+//             full native bridge, again only in its own top-level file:// frame.
+// main.js re-checks the sender frame and channel on every IPC call, so this gate
+// is defense in depth, not the only line.
 const { contextBridge, ipcRenderer } = require("electron");
 
+function argOf(name) {
+  try {
+    const hit = (process.argv || []).find((a) => a.startsWith("--" + name + "="));
+    return hit ? hit.slice(name.length + 3) : "";
+  } catch (_) { return ""; }
+}
+function isTopFrame() { try { return window.top === window; } catch (_) { return false; } }
+
+const SHELL = argOf("dn-shell");
+
+if (SHELL === "web") {
+  const APP_ORIGIN = argOf("dn-app-origin");
+  // location.href, not just origin: a window.open("") child is about:blank yet reports the
+  // opener's origin, and must not get the bridge.
+  if (APP_ORIGIN && isTopFrame() && location.origin === APP_ORIGIN && location.href.startsWith(APP_ORIGIN + "/")) {
+    const caps = argOf("dn-caps").split(",").filter(Boolean);
+    const api = {
+      desktop: Object.freeze({ version: argOf("dn-app-version"), platform: process.platform, arch: process.arch, shell: "web", caps }),
+      auth: { google: () => ipcRenderer.invoke("auth:google") },
+      openExternal: (url) => ipcRenderer.invoke("openExternal", String(url || "")),
+      // Recolour the native window-controls overlay to match the page's top bar.
+      titlebar: (opts) => ipcRenderer.invoke("shell:titlebar", opts || {}),
+      // Open the native tools window (terminal, scanner, VMs...), optionally on one section.
+      native: { open: (sec) => ipcRenderer.invoke("native:open", typeof sec === "string" ? sec : "") },
+    };
+    contextBridge.executeInMainWorld({
+      func: (bridge) => {
+        const ns = window.darknode && typeof window.darknode === "object" ? window.darknode : {};
+        ns.desktop = bridge.desktop;
+        ns.auth = bridge.auth;
+        ns.openExternal = bridge.openExternal;
+        ns.titlebar = bridge.titlebar;
+        ns.native = bridge.native;
+        window.darknode = ns;
+      },
+      args: [api],
+    });
+  }
+} else if (isTopFrame() && location.protocol === "file:") {
 contextBridge.exposeInMainWorld("darknode", {
   sysinfo: () => ipcRenderer.invoke("sysinfo"),
   run: (id, cmd, cwd) => ipcRenderer.invoke("run", { id, cmd, cwd }),
@@ -43,6 +94,7 @@ contextBridge.exposeInMainWorld("darknode", {
   closeNow: () => ipcRenderer.invoke("win:close-now"),
   onConfirmClose: (cb) => ipcRenderer.on("app:confirm-close", () => cb()),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
+  onNativeGo: (cb) => ipcRenderer.on("native:go", (_e, sec) => { try { cb(String(sec || "")); } catch (_) {} }),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),
@@ -133,3 +185,4 @@ contextBridge.exposeInMainWorld("darknode", {
   mcpDisconnect: (name) => ipcRenderer.invoke("mcp:disconnect", name),
   mcpStatus: () => ipcRenderer.invoke("mcp:status"),
 });
+}

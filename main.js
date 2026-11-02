@@ -1,7 +1,7 @@
 // Darknode desktop - Electron main process. Runs shell commands (streamed),
 // checks installed tools, and proxies local Ollama. Renderer has no Node access
 // (contextIsolation) and talks only through the preload bridge.
-const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, safeStorage, screen, session } = require("electron");
 const { spawn, execFile } = require("child_process");
 const os = require("os");
 const path = require("path");
@@ -26,6 +26,9 @@ const { safeFetch } = require("./lib/net/guard");
 const { ScopeEnforcer } = require("./lib/scope/enforce");
 const redactor = require("./lib/secret/redact");
 const { createVault, electronBackend } = require("./lib/secret/vault");
+const webshell = require("./lib/webshell/origin");
+const { createHandler: createWebHandler } = require("./lib/webshell/serve");
+const { runGoogleSignIn } = require("./lib/webshell/google-signin");
 
 // DA-008: redact secrets from the main-process log channel. Any value the vault
 // holds is registered with the redactor, so even an unusual token is scrubbed
@@ -93,23 +96,172 @@ function onScreen(x, y, w, h) {
   } catch (_) { return false; }
 }
 
+// ---- Shell selection (D0) ----
+// Default: the packaged website (web/, produced by scripts/sync-web.mjs) served on
+// the fixed app origin. DARKNODE_CLASSIC=1 keeps the legacy renderer reachable
+// until it is retired in D2; a missing web/ bundle also falls back to it.
+const WEB_ROOT = path.join(__dirname, "web");
+const CLASSIC_FILE = path.join(__dirname, "renderer", "index.html");
+const SHELL = (process.env.DARKNODE_CLASSIC === "1" || !fs.existsSync(path.join(WEB_ROOT, "index.html"))) ? "classic" : "web";
+if (SHELL === "classic" && process.env.DARKNODE_CLASSIC !== "1") console.warn("[darknode] web/ bundle missing - run `npm run sync-web`; using the classic renderer");
+const IPC_CTX = SHELL === "web"
+  ? { mode: "web", appOrigin: webshell.APP_ORIGIN }
+  : { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
+// Capabilities the web shell really exposes (window.darknode.desktop.caps).
+const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native"];
+const WEB_PARTITION = "persist:darknode";
+// The native tools window (web shell only) runs the app's own bundled classic
+// renderer, never website content, so it keeps the full classic surface.
+const CLASSIC_CTX = { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
+const ctxFor = (frame) => (SHELL === "web" && frame && webshell.isClassicUrl(frame.url, CLASSIC_CTX.classicFileUrl) ? CLASSIC_CTX : IPC_CTX);
+
+// The web origin must be a privileged, secure, service-worker-capable origin.
+// http://localhost already is (potentially trustworthy), so nothing is registered
+// for it; the session below intercepts it instead of opening a socket.
+
+// Every IPC handler is wrapped: the caller must be the top-level frame of the
+// trusted shell (app origin, or the classic file) and the channel must be one
+// that shell may use. A navigated, compromised or embedded frame is refused.
+{
+  const rawHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) => rawHandle(channel, (event, ...args) => {
+    let frame = null;
+    try { const f = event.senderFrame; if (f) frame = { url: f.url, isTop: !f.parent }; } catch (_) {}
+    const ctx = ctxFor(frame);
+    if (!webshell.isTrustedSender(frame, ctx) || !webshell.channelAllowed(channel, ctx)) {
+      let from = "(no frame)"; try { from = frame ? new URL(frame.url).origin : from; } catch (_) {}
+      console.warn("[darknode] refused IPC " + channel + " from " + from);
+      throw new Error("IPC refused");
+    }
+    return fn(event, ...args);
+  });
+}
+
+// Wire the app session: serve web/ for the app origin, pass every other http
+// request through untouched, serve the vendored Firebase SDK locally, and deny
+// permission prompts the website does not need.
+function setupWebSession() {
+  const ses = session.fromPartition(WEB_PARTITION);
+  let hosting = {};
+  try { hosting = JSON.parse(fs.readFileSync(path.join(WEB_ROOT, ".hosting.json"), "utf8")); } catch (e) { console.warn("[darknode] web/.hosting.json unreadable; serving without hosting headers:", e.message); }
+  // The site imports the Firebase SDK from www.gstatic.com. When sync-web vendored
+  // that exact version, every reference in served JS/HTML is pointed at the local
+  // copy, so the console boots offline. All references are rewritten together
+  // (pages and the SDK's own cross-imports), so there is one SDK instance.
+  const vendorDir = path.join(WEB_ROOT, "__vendor");
+  const GSTATIC = "https://www.gstatic.com/firebasejs/";
+  const vendored = new Set();
+  try { for (const v of fs.readdirSync(path.join(vendorDir, "www.gstatic.com", "firebasejs"))) vendored.add(v); } catch (_) {}
+  const GSTATIC_RE = /https:\/\/www\.gstatic\.com\/firebasejs\/(\d+\.\d+\.\d+)\//g;
+  const serveWeb = createWebHandler({
+    root: WEB_ROOT, hosting,
+    transform: (p, buf) => {
+      if (!vendored.size || !/\.(m?js|html)$/.test(p)) return null;
+      const text = buf.toString("utf8");
+      if (!text.includes(GSTATIC)) return null;
+      return Buffer.from(text.replace(GSTATIC_RE, (m, ver) => (vendored.has(ver) ? "/__vendor/www.gstatic.com/firebasejs/" + ver + "/" : m)), "utf8");
+    },
+  });
+  ses.protocol.handle("http", (req) => {
+    let host = ""; try { host = new URL(req.url).host; } catch (_) {}
+    if (host === webshell.APP_HOST) return serveWeb(req);
+    return ses.fetch(req, { bypassCustomProtocolHandlers: true });
+  });
+  const ALLOWED_PERMS = new Set(["clipboard-read", "clipboard-sanitized-write", "fullscreen"]);
+  ses.setPermissionRequestHandler((wc, permission, cb, details) => {
+    cb(ALLOWED_PERMS.has(permission) && webshell.isAppUrl((details && details.requestingUrl) || wc.getURL()));
+  });
+  return ses;
+}
+
+// The window that hosts the native (classic) UI: the main window in classic mode,
+// the native tools window in web mode. Streamed output (terminals, scans, AI tokens)
+// goes there.
+let nativeWin = null;
+const uiWin = () => (SHELL === "web" ? nativeWin : win);
+function toUi(channel, payload) {
+  const w = uiWin();
+  if (w && !w.isDestroyed()) { try { w.webContents.send(channel, payload); } catch (_) {} }
+}
+const NATIVE_SECTIONS = new Set(["runner", "scanner", "fuzzer", "recon", "vms", "lab", "forensics", "loot", "tools", "payloads", "exploits", "http", "engagement", "playbooks", "wordlists", "cloud", "github", "agent", "home"]);
+function reapNativeWork() {
+  for (const p of procs.values()) { try { p.kill(); } catch (_) {} } procs.clear();
+  for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
+}
+// Web shell: open (or focus) the native tools window, optionally on one section.
+function openNativeWindow(sec) {
+  if (nativeWin && !nativeWin.isDestroyed()) {
+    if (sec) toUi("native:go", sec);
+    if (nativeWin.isMinimized()) nativeWin.restore();
+    nativeWin.focus();
+    return;
+  }
+  let force = false;
+  nativeWin = new BrowserWindow({
+    width: 1240, height: 820, minWidth: 900, minHeight: 600,
+    backgroundColor: "#06080f", show: false, frame: false, title: "Darknode native tools",
+    icon: path.join(__dirname, "renderer", "icon.png"),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true,
+      additionalArguments: ["--no-boot-anim"],
+    },
+  });
+  const nw = nativeWin;
+  nw.setMenuBarVisibility(false);
+  nw.once("ready-to-show", () => nw.show());
+  const rendererDir = path.join(__dirname, "renderer");
+  nw.webContents.on("will-navigate", (e, url) => {
+    let ok = false;
+    try { const p = fileURLToPath(url); ok = p === path.join(rendererDir, "index.html") || p.startsWith(rendererDir + path.sep); } catch (_) {}
+    if (!ok) e.preventDefault();
+  });
+  nw.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Same confirm-before-close as the classic app while its work is in flight.
+  nw.on("close", (e) => {
+    if (force || _forceClose || !workInFlight()) return;
+    e.preventDefault();
+    toUi("app:confirm-close");
+  });
+  nw.on("maximize", () => toUi("win:state", true));
+  nw.on("unmaximize", () => toUi("win:state", false));
+  nw.webContents.on("render-process-gone", reapNativeWork);
+  nw.on("closed", () => { if (nativeWin === nw) nativeWin = null; reapNativeWork(); });
+  nw._dnForceClose = () => { force = true; nw.close(); };
+  nw.loadFile(CLASSIC_FILE, sec ? { hash: "sec=" + sec } : undefined);
+}
+
+function windowFrameOptions() {
+  if (SHELL === "classic") return { frame: false };
+  // Native window controls; the website draws its own top bar beneath them and
+  // marks it as the drag region (html[data-desktop] in the web CSS).
+  if (process.platform === "darwin") return { titleBarStyle: "hiddenInset" };
+  return { titleBarStyle: "hidden", titleBarOverlay: { color: "#ffffff", symbolColor: "#1f2937", height: 48 } };
+}
+
 function createWindow() {
   const st = loadWinState();
   _zoom = Number.isFinite(st.zoom) ? st.zoom : 0;
-  const opts = {
+  const webPreferences = {
+    preload: path.join(__dirname, "preload.js"),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
+    webSecurity: true,
+    webviewTag: SHELL === "classic",   // the classic Browser section (<webview>) only
+  };
+  if (SHELL === "web") {
+    webPreferences.session = setupWebSession();
+    webPreferences.additionalArguments = ["--dn-shell=web", "--dn-app-origin=" + webshell.APP_ORIGIN, "--dn-app-version=" + app.getVersion(), "--dn-caps=" + WEB_CAPS.join(",")];
+  }
+  const opts = Object.assign({
     width: 1300, height: 840, minWidth: 900, minHeight: 600,
-    backgroundColor: "#06080f",
+    backgroundColor: SHELL === "web" ? "#ffffff" : "#06080f",
     show: false,          // show on ready-to-show once painted, so there is no blank/flash on launch
     icon: path.join(__dirname, "renderer", "icon.png"),
-    frame: false,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,      // OS-level sandbox for the renderer/preload (defense in depth)
-      webviewTag: true,   // enables the built-in Browser section (<webview>)
-    },
-  };
+    title: "Darknode",
+    webPreferences,
+  }, windowFrameOptions());
   if (Number.isFinite(st.width) && st.width >= opts.minWidth) opts.width = Math.round(st.width);
   if (Number.isFinite(st.height) && st.height >= opts.minHeight) opts.height = Math.round(st.height);
   if (Number.isFinite(st.x) && Number.isFinite(st.y) && onScreen(st.x, st.y, opts.width, opts.height)) { opts.x = Math.round(st.x); opts.y = Math.round(st.y); }
@@ -123,6 +275,10 @@ function createWindow() {
   // a stray click on X does not silently kill in-progress work. The renderer shows
   // the confirm (no native dialog); on "close anyway" it calls win:close-now.
   win.on("close", (e) => {
+    if (SHELL === "web") {
+      if (!_forceClose && nativeWin && !nativeWin.isDestroyed()) { e.preventDefault(); nativeWin.focus(); nativeWin.close(); }
+      return;
+    }
     if (_forceClose || !workInFlight()) return;
     e.preventDefault();
     try { win.webContents.send("app:confirm-close"); } catch (_) {}
@@ -142,6 +298,7 @@ function createWindow() {
   // renderer every few seconds. Reap them so nothing leaks; VMs are left running (main
   // still holds their handles and a reloaded renderer can re-list them).
   win.webContents.on("render-process-gone", () => {
+    if (SHELL === "web") return; // native work belongs to the native tools window
     for (const p of procs.values()) { try { p.kill(); } catch (_) {} } procs.clear();
     for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
     for (const s of mcpServers.values()) { s.closedByUser = true; if (s.reconnectTimer) { try { clearTimeout(s.reconnectTimer); } catch (_) {} s.reconnectTimer = null; } try { if (s.proc) s.proc.kill("SIGKILL"); } catch (_) {} }
@@ -150,7 +307,53 @@ function createWindow() {
   win.on("maximize", () => { win.webContents.send("win:state", true); saveWinStateSoon(); });
   win.on("unmaximize", () => { win.webContents.send("win:state", false); saveWinStateSoon(); });
   if (process.env.DARKNODE_DEBUG) win.webContents.on("console-message", (e, lvl, msg) => console.log("[renderer]", msg !== undefined ? msg : (e && e.message) || ""));
-  if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, 3500));
+  if (process.env.DARKNODE_SHOT) win.webContents.on("did-finish-load", () => setTimeout(async () => { try { const img = await win.webContents.capturePage(); fs.writeFileSync(process.env.DARKNODE_SHOT, img.toPNG()); console.log("SHOT_SAVED"); } catch (e) { console.log("SHOT_ERR " + e.message); } }, Number(process.env.DARKNODE_SHOT_DELAY) || 3500));
+  if (SHELL === "web") {
+    // Security: the main frame stays on the app origin; real web links open in the
+    // OS browser; every other scheme is dropped.
+    const guardNav = (e, url) => {
+      const kind = webshell.classifyNavigation(url);
+      if (kind === "allow") return;
+      e.preventDefault();
+      if (kind === "external") shell.openExternal(url);
+    };
+    win.webContents.on("will-navigate", guardNav);
+    win.webContents.on("will-redirect", (e, url, _inPlace, isMainFrame) => { if (isMainFrame) guardNav(e, url); });
+    // window.open: only the Firebase auth handler may open in-app, as a sandboxed
+    // popup that can only move between the auth/provider hosts.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      const kind = webshell.classifyWindowOpen(url);
+      if (kind === "auth-popup") {
+        return { action: "allow", overrideBrowserWindowOptions: { width: 520, height: 680, parent: win, autoHideMenuBar: true, titleBarStyle: "default", titleBarOverlay: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } };
+      }
+      if (kind === "blank") {
+        return { action: "allow", overrideBrowserWindowOptions: { width: 900, height: 1000, autoHideMenuBar: true, backgroundColor: "#ffffff", titleBarStyle: "default", titleBarOverlay: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } } };
+      }
+      if (kind === "external") shell.openExternal(url);
+      return { action: "deny" };
+    });
+    win.webContents.on("did-create-window", (child, details) => {
+      // Auth popups may move between the provider hosts; a blank report window never
+      // navigates (its links go to the OS browser). Neither gets the bridge (preload).
+      const blank = webshell.classifyWindowOpen(details && details.url) === "blank";
+      const guardPopup = (e, url) => {
+        if (blank) { e.preventDefault(); if (webshell.classifyNavigation(url) === "external") shell.openExternal(url); return; }
+        if (!webshell.authPopupNavAllowed(url)) { e.preventDefault(); }
+      };
+      child.webContents.on("will-navigate", guardPopup);
+      child.webContents.on("will-redirect", guardPopup);
+      child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    });
+    // The site asks before unloading when a tool has typed input (beforeunload).
+    // Electron would silently cancel the navigation (e.g. sign-out); show the same
+    // leave-or-stay choice a browser shows instead.
+    win.webContents.on("will-prevent-unload", (e) => {
+      const choice = dialog.showMessageBoxSync(win, { type: "question", buttons: ["Leave", "Stay"], defaultId: 1, cancelId: 1, title: "Darknode", message: "Leave this page?", detail: "Changes you made may not be saved." });
+      if (choice === 0) e.preventDefault();
+    });
+    win.loadURL(webshell.APP_ORIGIN + "/");
+    return;
+  }
   // Security: keep the main renderer pinned to the app's own bundled files.
   // Any non-file URL, or a file:// path outside renderer/, is blocked — so a
   // stray link can't escape the shell into file:///etc/passwd etc.
@@ -162,7 +365,7 @@ function createWindow() {
   });
   // Security: block new-window requests from the renderer (links should use openExternal).
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  win.loadFile(CLASSIC_FILE);
 }
 
 // Constrain any web content (esp. the <webview> Browser tab): open real links in the
@@ -174,6 +377,10 @@ app.on("web-contents-created", (_e, contents) => {
   });
   contents.on("will-attach-webview", (_evt, wp) => { delete wp.preload; wp.nodeIntegration = false; wp.contextIsolation = true; wp.sandbox = true; });
 });
+// One instance: a second launch focuses the first (two processes must not share
+// the persistent web partition).
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -303,12 +510,12 @@ ipcMain.handle("run", (_e, { id, cmd, cwd }) => {
   const p = isWin ? spawn("cmd.exe", ["/c", cmd], { cwd: cwd || os.homedir() })
                   : spawn("/bin/sh", ["-c", cmd], { cwd: cwd || os.homedir() });
   procs.set(id, p);
-  const send = (chunk) => win && win.webContents.send("run:data", { id, chunk });
+  const send = (chunk) => toUi("run:data", { id, chunk });
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across pipe-chunk boundaries so multibyte UTF-8 isn't split into U+FFFD
   p.stdout.on("data", send);
   p.stderr.on("data", send);
-  p.on("close", (code) => { procs.delete(id); win && win.webContents.send("run:end", { id, code }); });
-  p.on("error", (err) => { send("[error] " + err.message + "\n"); procs.delete(id); win && win.webContents.send("run:end", { id, code: -1 }); });
+  p.on("close", (code) => { procs.delete(id); toUi("run:end", { id, code }); });
+  p.on("error", (err) => { send("[error] " + err.message + "\n"); procs.delete(id); toUi("run:end", { id, code: -1 }); });
   return true;
 });
 ipcMain.handle("kill", (_e, id) => { const p = procs.get(id); if (p) { try { p.kill(); } catch (_) {} } return true; });
@@ -375,7 +582,7 @@ ipcMain.handle("tool:install", (_e, { id, install }) => new Promise((res) => {
   if (cmd.startsWith("sudo ")) cmd = "pkexec " + cmd.slice(5).replace(/^apt install/, "apt-get install");
   const p = spawn("/bin/bash", ["-lc", cmd]);
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across chunk boundaries (multibyte-safe)
-  const send = (c) => win && win.webContents.send("tool:install:data", { id, chunk: c });
+  const send = (c) => toUi("tool:install:data", { id, chunk: c });
   p.stdout.on("data", send); p.stderr.on("data", send);
   p.on("close", (code) => res({ ok: code === 0, code, cmd }));
   p.on("error", (e) => { send("[error] " + e.message + "\n"); res({ ok: false, error: e.message, cmd }); });
@@ -390,8 +597,8 @@ ipcMain.handle("pty:spawn", (_e, { cols, rows }) => {
   try { p = nodePty.spawn(shell, [], { name: "xterm-color", cols: cols || 80, rows: rows || 24, cwd: os.homedir(), env: process.env }); }
   catch (e) { return { ok: false, error: e.message }; }
   ptys.set(id, p);
-  p.onData((d) => win && win.webContents.send("pty:data", { id, data: d }));
-  p.onExit(() => { ptys.delete(id); win && win.webContents.send("pty:exit", { id }); });
+  p.onData((d) => toUi("pty:data", { id, data: d }));
+  p.onExit(() => { ptys.delete(id); toUi("pty:exit", { id }); });
   return { ok: true, id, shell };
 });
 ipcMain.handle("pty:write", (_e, { id, data }) => { const p = ptys.get(id); if (p) { try { p.write(data); } catch (_) {} } }); // keystrokes can race pty exit
@@ -446,7 +653,7 @@ ipcMain.handle("ollama:stream", (_e, { id, body }) => new Promise((resolve) => {
           let j; try { j = JSON.parse(line); } catch (_) { continue; }
           if (j.error) { done({ ok: false, error: j.error }); return; }
           const m = j.message || {};
-          if (m.content) { content += m.content; win && win.webContents.send("ollama:token", { id, chunk: m.content }); }
+          if (m.content) { content += m.content; toUi("ollama:token", { id, chunk: m.content }); }
           if (m.tool_calls && m.tool_calls.length) toolCalls = (toolCalls || []).concat(m.tool_calls);
         }
       };
@@ -487,7 +694,7 @@ ipcMain.handle("claude:stream", (_e, { id, body, apiKey }) => new Promise((resol
           const p = line.slice(5).trim(); if (!p || p === "[DONE]") continue;
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           if (o.type === "error") { done({ ok: false, error: (o.error && o.error.message) || "stream error" }); return; }
-          const txt = anthropicDelta(o); if (txt) { content += txt; win && win.webContents.send("claude:token", { id, chunk: txt }); }
+          const txt = anthropicDelta(o); if (txt) { content += txt; toUi("claude:token", { id, chunk: txt }); }
           const u = usageOf(o); if (u) { if (u.inTok) inTok = u.inTok; if (u.outTok) outTok = u.outTok; }
         }
       };
@@ -551,7 +758,7 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           if (o.error) { done({ ok: false, error: (o.error && o.error.message) || "stream error" }); return; }
           const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
-          if (delta.content) { content += delta.content; win && win.webContents.send("api:token", { id, chunk: delta.content }); }
+          if (delta.content) { content += delta.content; toUi("api:token", { id, chunk: delta.content }); }
           if (delta.tool_calls && delta.tool_calls.length) toolCalls = mergeToolCallDeltas(toolCalls, delta.tool_calls);
           if (o.usage) { inTok = o.usage.prompt_tokens || inTok; outTok = o.usage.completion_tokens || outTok; }
         }
@@ -595,7 +802,7 @@ ipcMain.handle("dai:stream", (_e, { id, messages }) => new Promise((resolve) => 
           const p = line.slice(5).trim(); if (!p || p === "[DONE]") continue;
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
-          if (delta.content) { content += delta.content; win && win.webContents.send("dai:token", { id, chunk: delta.content }); }
+          if (delta.content) { content += delta.content; toUi("dai:token", { id, chunk: delta.content }); }
         }
       };
       r.on("data", pump);
@@ -728,11 +935,59 @@ ipcMain.handle("openExternal", (_e, url) => {
   return false;
 });
 
+// ---- Web shell: Google sign-in via the system browser (D0) ----
+// Google blocks OAuth inside embedded browsers, so the page asks the app. The
+// system browser runs loopback + PKCE and only the Google ID token comes back;
+// the page signs in to Firebase with it. One flow at a time; a new request
+// cancels the previous one. Nothing here logs or stores the token.
+const GOOGLE_SIGNIN = {
+  clientId: process.env.DARKNODE_GOOGLE_CLIENT_ID || _oauthCfg.googleSignInClientId || _oauthCfg.gmailClientId || "",
+  clientSecret: process.env.DARKNODE_GOOGLE_CLIENT_SECRET || _oauthCfg.googleSignInClientSecret || (_oauthCfg.googleSignInClientId ? "" : _oauthCfg.gmailClientSecret) || "",
+};
+let _cancelGoogle = null;
+ipcMain.handle("auth:google", async () => {
+  if (_cancelGoogle) { try { _cancelGoogle(); } catch (_) {} }
+  const r = await runGoogleSignIn({
+    http, fetchImpl: fetch, openExternal: (u) => shell.openExternal(u),
+    clientId: GOOGLE_SIGNIN.clientId, clientSecret: GOOGLE_SIGNIN.clientSecret,
+    onCancel: (fn) => { _cancelGoogle = fn; },
+  });
+  _cancelGoogle = null;
+  if (r.ok && win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  return r.ok ? { ok: true, idToken: r.idToken } : { ok: false, error: r.error };
+});
+
+// Recolour the native window-controls overlay so it matches the page's top bar.
+ipcMain.handle("shell:titlebar", (_e, opts) => {
+  if (!win || process.platform === "darwin" || typeof win.setTitleBarOverlay !== "function") return false;
+  const hex = (v) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined);
+  const o = {};
+  if (hex(opts && opts.color)) o.color = opts.color;
+  if (hex(opts && opts.symbolColor)) o.symbolColor = opts.symbolColor;
+  const h = Number(opts && opts.height);
+  if (Number.isInteger(h) && h >= 28 && h <= 80) o.height = h;
+  if (!Object.keys(o).length) return false;
+  try { win.setTitleBarOverlay(o); return true; } catch (_) { return false; }
+});
+
 // ---- custom (frameless) window controls ----
-ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
-ipcMain.handle("win:maximize", () => { if (!win) return false; win.isMaximized() ? win.unmaximize() : win.maximize(); return win.isMaximized(); });
-ipcMain.handle("win:close", () => { if (win) win.close(); });
-ipcMain.handle("win:close-now", () => { _forceClose = true; if (win) win.close(); }); // user confirmed closing with work in flight
+// Each acts on the window that asked (the main window, or the native tools window).
+const callerWin = (e) => { try { return BrowserWindow.fromWebContents(e.sender); } catch (_) { return null; } };
+ipcMain.handle("win:minimize", (e) => { const w = callerWin(e); if (w) w.minimize(); });
+ipcMain.handle("win:maximize", (e) => { const w = callerWin(e); if (!w) return false; w.isMaximized() ? w.unmaximize() : w.maximize(); return w.isMaximized(); });
+ipcMain.handle("win:close", (e) => { const w = callerWin(e); if (w) w.close(); });
+ipcMain.handle("win:close-now", (e) => { // user confirmed closing with work in flight
+  const w = callerWin(e);
+  if (w && w === nativeWin && typeof w._dnForceClose === "function") { w._dnForceClose(); return; }
+  _forceClose = true; if (win) win.close();
+});
+
+// ---- Web shell: open the native tools window (optionally on one section) ----
+ipcMain.handle("native:open", (_e, sec) => {
+  if (SHELL !== "web") return false;
+  openNativeWindow(typeof sec === "string" && NATIVE_SECTIONS.has(sec) ? sec : "");
+  return true;
+});
 
 // ---- CVE search (NVD) + CISA KEV enrichment ----
 // The KEV catalog is fetched once per process and cached; it flags which of the
@@ -836,16 +1091,16 @@ const scans = new Map();
 ipcMain.handle("scan:cancel", (_e, id) => { const s = scans.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency }) => {
   const g = scope().enforce("scan", host);
-  if (!g.allowed) { win && win.webContents.send("scan:done", { id, open: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
+  if (!g.allowed) { toUi("scan:done", { id, open: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false };
   scans.set(id, state);
   const r = await scanPorts(host, ports, {
     timeout, concurrency, signal: state,
-    onHit: (port, banner) => { if (win) win.webContents.send("scan:hit", { id, port, banner }); },
-    onProgress: (done, total) => { if (win) win.webContents.send("scan:progress", { id, done, total }); },
+    onHit: (port, banner) => { toUi("scan:hit", { id, port, banner }); },
+    onProgress: (done, total) => { toUi("scan:progress", { id, done, total }); },
   });
   scans.delete(id);
-  win && win.webContents.send("scan:done", { id, open: r.open, cancelled: r.cancelled });
+  toUi("scan:done", { id, open: r.open, cancelled: r.cancelled });
   return { ok: true };
 });
 
@@ -856,14 +1111,14 @@ const fuzzes = new Map();
 ipcMain.handle("fuzz:cancel", (_e, id) => { const s = fuzzes.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("fuzz:dirs", async (_e, { id, base, words, concurrency, timeout }) => {
   const g = scope().enforce("fuzz", base);
-  if (!g.allowed) { win && win.webContents.send("fuzz:done", { id, hits: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
+  if (!g.allowed) { toUi("fuzz:done", { id, hits: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false }; fuzzes.set(id, state);
   const r = await fuzzDirs(base, words, {
     timeout, concurrency, signal: state,
-    onHit: (hit) => { if (win) win.webContents.send("fuzz:hit", { id, path: hit.path, status: hit.status, len: hit.len, loc: hit.loc }); },
-    onProgress: (done, total) => { if (win) win.webContents.send("fuzz:progress", { id, done, total }); },
+    onHit: (hit) => { toUi("fuzz:hit", { id, path: hit.path, status: hit.status, len: hit.len, loc: hit.loc }); },
+    onProgress: (done, total) => { toUi("fuzz:progress", { id, done, total }); },
   });
-  fuzzes.delete(id); win && win.webContents.send("fuzz:done", { id, hits: r.hits, cancelled: r.cancelled });
+  fuzzes.delete(id); toUi("fuzz:done", { id, hits: r.hits, cancelled: r.cancelled });
   return { ok: true };
 });
 
@@ -1299,7 +1554,7 @@ ipcMain.handle("vm:start", async (_e, { id }) => {
   catch (e) { return { ok: false, error: e.message }; }
   let earlyErr = "";
   proc.stderr.on("data", (d) => (earlyErr += d.toString()));
-  proc.on("exit", () => { vmProcs.delete(id); win && win.webContents.send("vm:exit", { id }); });
+  proc.on("exit", () => { vmProcs.delete(id); toUi("vm:exit", { id }); });
   const rec = { proc, display, vncPort: 5900 + display, qmp: qmpPath };
   vmProcs.set(id, rec);
   // give QEMU a moment; if it died immediately, report the error

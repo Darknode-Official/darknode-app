@@ -88,3 +88,44 @@ $ node --check main.js   # passes
   Electron E2E harness (DA-012).
 - The per-handler authorization/injection review of all 90 IPC channels is
   incomplete.
+
+## Web shell (D0, 2026-10-17)
+
+The default window now runs the packaged website (`web/`, built by
+`scripts/sync-web.mjs`) instead of `renderer/`; `DARKNODE_CLASSIC=1` keeps the old
+renderer until D2. Code: `lib/webshell/{origin,serve,google-signin}.js`, `main.js`
+(`setupWebSession`, `createWindow`, `auth:google`, `shell:titlebar`), `preload.js`.
+
+- **Origin:** `http://localhost:47913`, answered by `session.protocol.handle("http")`
+  inside the `persist:darknode` session. No socket is opened, so no other local
+  process or web page can reach it, and nothing can squat the port. A custom
+  `app://` scheme was rejected: the Cloudflare worker's CORS and the site's own
+  hostname locks only accept darknode.ai/localhost, and Firebase Auth's authorized
+  domains include `localhost` by default.
+- **Serving:** firebase.json headers (CSP, X-Frame-Options SAMEORIGIN, ...) and
+  rewrites are mirrored from `web/.hosting.json`. Paths are decoded and refused on
+  NUL, backslash, dot-segments (except `.well-known`), escape from `web/` (also
+  after realpath, so symlinks cannot leave it). Tests: `test/webshell/serve.test.mjs`.
+- **Bridge:** exposed only in the top-level frame whose `location.href` is on the
+  app origin. Tool iframes (`/<sec>?embed=1`) are same-origin but get **no** bridge:
+  they render third-party data and the site's CSP allows `'unsafe-inline'`, so a
+  framed tool is treated as less trusted than the shell. `window.open("")` report
+  windows (about:blank, opener's origin) get none either. The web shell exposes
+  only `desktop`, `auth.google`, `openExternal` and `titlebar`; the classic
+  shell/fs/pty surface stays classic-only until each capability is added on purpose.
+- **IPC sender check:** every `ipcMain.handle` is wrapped. In web mode a call is
+  served only from the top frame on the app origin and only for the web-shell
+  channels; anything else is refused and logged. Tests: `test/webshell/origin.test.mjs`
+  (including the real preload in a vm) and the Electron E2E.
+- **Navigation:** the main frame may navigate only within the app origin; http(s)
+  goes to the OS browser, everything else is dropped. `window.open` allows Firebase
+  auth popups (`/__/auth/` on the project's auth hosts) and blank report windows;
+  other http(s) opens go to the OS browser. Note: Chromium reports
+  `window.open("javascript:...")` as about:blank too, so it also opens a blank
+  child; that child has no bridge, cannot navigate and its IPC is refused.
+- **Google sign-in:** system browser, loopback + PKCE, ID token only, checked for
+  issuer/audience/expiry/nonce before it is handed to the page; never logged or
+  stored. Tests: `test/webshell/google-signin.test.mjs`.
+- **E2E:** `npm run e2e:webshell` (needs a display; `E2E_OFFLINE=1` drops all
+  off-origin traffic). Chromium's setuid sandbox helper is not installed on the
+  dev box, so runs there use `--no-sandbox`; `sandbox: true` stays set in code.
