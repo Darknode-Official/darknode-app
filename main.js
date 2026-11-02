@@ -108,7 +108,7 @@ const IPC_CTX = SHELL === "web"
   ? { mode: "web", appOrigin: webshell.APP_ORIGIN }
   : { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
 // Capabilities the web shell really exposes (window.darknode.desktop.caps).
-const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native"];
+const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native", "device"];
 const WEB_PARTITION = "persist:darknode";
 // The native tools window (web shell only) runs the app's own bundled classic
 // renderer, never website content, so it keeps the full classic surface.
@@ -189,9 +189,9 @@ function reapNativeWork() {
   for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
 }
 // Web shell: open (or focus) the native tools window, optionally on one section.
-function openNativeWindow(sec) {
+function openNativeWindow(sec, type) {
   if (nativeWin && !nativeWin.isDestroyed()) {
-    if (sec) toUi("native:go", sec);
+    if (sec) toUi("native:go", { sec, type });
     if (nativeWin.isMinimized()) nativeWin.restore();
     nativeWin.focus();
     return;
@@ -228,7 +228,9 @@ function openNativeWindow(sec) {
   nw.webContents.on("render-process-gone", reapNativeWork);
   nw.on("closed", () => { if (nativeWin === nw) nativeWin = null; reapNativeWork(); });
   nw._dnForceClose = () => { force = true; nw.close(); };
-  nw.loadFile(CLASSIC_FILE, sec ? { hash: "sec=" + sec } : undefined);
+  // A command to type (not run) goes over once the page is up; the hash alone opens the section.
+  if (type) nw.webContents.once("did-finish-load", () => setTimeout(() => toUi("native:go", { sec, type }), 400));
+  nw.loadFile(CLASSIC_FILE, sec && !type ? { hash: "sec=" + sec } : undefined);
 }
 
 function windowFrameOptions() {
@@ -982,10 +984,25 @@ ipcMain.handle("win:close-now", (e) => { // user confirmed closing with work in 
   _forceClose = true; if (win) win.close();
 });
 
+// ---- Web shell: installed local models (Ollama tags, read-only; no prompt is sent) ----
+ipcMain.handle("local:models", () => new Promise((res) => {
+  const req = http.get({ host: "127.0.0.1", port: 11434, path: "/api/tags", timeout: 2500 }, (r) => {
+    let b = ""; r.on("data", (d) => { if (b.length < 2e6) b += d; });
+    r.on("end", () => { try { const j = JSON.parse(b); res({ ok: true, models: (j.models || []).slice(0, 200).map((m) => ({ name: String(m.name || ""), size: Number(m.size) || 0, family: String((m.details && m.details.family) || ""), params: String((m.details && m.details.parameter_size) || "") })) }); } catch (_) { res({ ok: false, error: "unexpected reply from Ollama" }); } });
+  });
+  req.on("timeout", () => { req.destroy(); res({ ok: false, error: "Ollama is not running on this computer" }); });
+  req.on("error", () => res({ ok: false, error: "Ollama is not running on this computer" }));
+}));
+
 // ---- Web shell: open the native tools window (optionally on one section) ----
-ipcMain.handle("native:open", (_e, sec) => {
+// extra.type: one line of text typed into a new Terminal tab. It is never sent with Enter;
+// the user reads it and runs it (or not) in the terminal.
+const typeable = (t) => (typeof t === "string" && t.length > 0 && t.length <= 1000 && !/[\x00-\x1f\x7f]/.test(t) ? t : "");
+ipcMain.handle("native:open", (_e, sec, extra) => {
   if (SHELL !== "web") return false;
-  openNativeWindow(typeof sec === "string" && NATIVE_SECTIONS.has(sec) ? sec : "");
+  const s = typeof sec === "string" && NATIVE_SECTIONS.has(sec) ? sec : "";
+  const type = s === "runner" ? typeable(extra && extra.type) : "";
+  openNativeWindow(s, type);
   return true;
 });
 

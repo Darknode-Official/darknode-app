@@ -2002,7 +2002,7 @@ ${ollamaLine}`;
       const s = sessions[i];
       if (s) { try { s.fit.fit(); S.ptyResize(s.ptyId, s.term.cols, s.term.rows); } catch (_) {} s.term.focus(); }
     };
-    async function addTab(initialCmd, label) {
+    async function addTab(initialCmd, label, typed) {
       counter++;
       const host = document.createElement("div"); host.className = "xterm-host"; stackEl.appendChild(host);
       const term = new Terminal({ fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 13, cursorBlink: true, theme: { background: "#04070d", foreground: "#cfe3f7", cursor: accentColor() } });
@@ -2017,7 +2017,9 @@ ${ollamaLine}`;
       sessions.push({ ptyId, term, fit, host, ro, label: label || "shell " + counter, active: false });
       activate(sessions.length - 1);
       if (initialCmd) setTimeout(() => S.ptyWrite(ptyId, initialCmd + "\r"), 130);
+      else if (typed) setTimeout(() => S.ptyWrite(ptyId, typed), 300); // typed only: the user presses Enter
     }
+    window.__dnTermType = (t) => addTab(null, "from Assistant", t);
     function closeTab(i) {
       const s = sessions[i]; if (!s) return;
       try { s.ro.disconnect(); } catch (_) {} try { S.ptyKill(s.ptyId); } catch (_) {} try { s.term.dispose(); } catch (_) {}
@@ -2026,9 +2028,9 @@ ${ollamaLine}`;
     }
     tabsEl.onclick = (e) => { const x = e.target.closest("[data-x]"); if (x) { e.stopPropagation(); closeTab(+x.dataset.x); return; } const t = e.target.closest("[data-i]"); if (t) activate(+t.dataset.i); };
     $("#tadd", el).onclick = () => addTab();
-    currentTermCleanup = () => { sessions.forEach((s) => { try { s.ro.disconnect(); } catch (_) {} try { S.ptyKill(s.ptyId); } catch (_) {} try { s.term.dispose(); } catch (_) {} ptyTerms.delete(s.ptyId); }); sessions.length = 0; };
+    currentTermCleanup = () => { window.__dnTermType = null; sessions.forEach((s) => { try { s.ro.disconnect(); } catch (_) {} try { S.ptyKill(s.ptyId); } catch (_) {} try { s.term.dispose(); } catch (_) {} ptyTerms.delete(s.ptyId); }); sessions.length = 0; };
 
-    addTab(opts && opts.cmd, opts && opts.cmd ? (opts.cmd.split(" ")[0] || "shell") : null);
+    addTab(opts && opts.cmd, opts && opts.cmd ? (opts.cmd.split(" ")[0] || "shell") : opts && opts.type ? "from Assistant" : null, opts && opts.type);
   },
 
 
@@ -4414,7 +4416,12 @@ function saveFrame() {
 document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); saveFrame(); } });
 
 // the Deck (desktop web shell) can switch this window to another section
-if (S.onNativeGo) S.onNativeGo((sec) => { if (sections[sec]) go(sec); });
+// A typed command opens in a new Terminal tab without Enter (kept shells stay open).
+if (S.onNativeGo) S.onNativeGo((sec, type) => {
+  if (!sections[sec]) return;
+  if (sec === "runner" && type) { if (curSec === "runner" && window.__dnTermType) window.__dnTermType(type); else go("runner", { type }); return; }
+  go(sec);
+});
 // restore last frame (section + typed text), else last section
 (function () {
   let frame = null; try { frame = JSON.parse(localStorage.getItem("s_frame")); } catch (_) {}

@@ -144,6 +144,34 @@ async function run(w) {
     nw.destroy(); await wait(300);
   }
 
+  // Assistant "Run in Terminal": the command is typed into a new tab, never entered.
+  {
+    const before2 = new Set(BrowserWindow.getAllWindows().map((x) => x.id));
+    await ev("window.darknode.native.open('runner', { type: 'echo darknode-typed-check' })");
+    const tw = await until(() => BrowserWindow.getAllWindows().find((x) => !before2.has(x.id) && /renderer\/index\.html/.test(x.webContents.getURL())), 15000);
+    const tab = tw && await until(() => tw.webContents.executeJavaScript("[...document.querySelectorAll('.term-tab')].map(t => t.textContent).join('|')").then((t) => /from Assistant/.test(t) && t), 10000);
+    check("typed command opens a Terminal tab from the Assistant", !!tab, tab || "no tab");
+    const bad = await ev("window.darknode.native.open('runner', { type: 'rm -rf x\\nwhoami' }).then(() => 'ok', () => 'refused')");
+    check("multi-line typed text is dropped (window opens, nothing typed)", bad === "ok");
+    if (tw) { tw.destroy(); await wait(300); }
+    for (const x of BrowserWindow.getAllWindows()) if (/renderer\/index\.html/.test(x.webContents.getURL())) x.destroy();
+  }
+
+  // "This Computer" page inside the Deck.
+  await ev("document.querySelector('.dk-nv[data-scene=\"device\"]').click()");
+  const sys = await until(() => ev("(document.querySelector('#dvSys') || {}).textContent || ''").then((t) => /Host/.test(t) && t), 10000);
+  check("This Computer shows real device info", !!sys, (sys || "").slice(0, 120));
+  await ev("document.getElementById('dvAudit').click()");
+  const grade = await until(() => ev("(document.querySelector('.dv-grade') || {}).textContent || ''"), 60000, 500);
+  check("hardening audit runs on this computer and grades it", /^[A-F]$|^n\/a$/.test(grade || ""), grade);
+  if (!OFFLINE) {
+    await ev("document.getElementById('dvHost').value = 'example.com'; document.querySelector('[data-lk=\"dns\"]').click()");
+    const dnsOut = await until(() => ev("(document.getElementById('dvLookOut') || {}).textContent || ''").then((t) => /\bA\b|NS/.test(t) && t), 15000);
+    check("direct DNS lookup from the Deck", !!dnsOut, (dnsOut || "").slice(0, 100));
+  }
+  await wait(600);
+  await shot(w, "device-1300x840");
+
   // Desktop home, part 2: the Deck as the home screen. auth.js mounts it only for the
   // admin claim, which this harness cannot hold, so the harness calls the same
   // admin.js openDeck(user, { onSignOut }) that auth.js calls for an admin.
