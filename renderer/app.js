@@ -3103,7 +3103,7 @@ ${ollamaLine}`;
       <div class="card" style="max-width:920px">
         <div class="lbl">CIDR / subnet calculator</div>
         <div class="run-bar"><input class="f mono" id="cidrin" placeholder="192.168.1.0/24" spellcheck="false" style="flex:1"></div>
-        <div class="ref-grid" style="margin-top:10px">
+        <div style="margin-top:10px">
           <div class="ref-row"><span class="muted" style="min-width:80px">Network</span><code id="c_net" class="mono">—</code></div>
           <div class="ref-row"><span class="muted" style="min-width:80px">Broadcast</span><code id="c_bc" class="mono">—</code></div>
           <div class="ref-row"><span class="muted" style="min-width:80px">Netmask</span><code id="c_mask" class="mono">—</code></div>
@@ -3118,7 +3118,7 @@ ${ollamaLine}`;
       </div>`;
     const pat = $("#rxpat", el), flg = $("#rxflags", el), txt = $("#rxtext", el), out = $("#rxout", el), st = $("#rxstat", el);
     function run() {
-      const p = pat.value; if (!p) { out.textContent = txt.value; st.textContent = ""; return; }
+      const p = pat.value; if (!p) { if (txt.value) out.textContent = txt.value; else out.innerHTML = `<span class="muted">Enter a pattern — matches are highlighted here.</span>`; st.textContent = ""; return; }
       let flags = flg.value || "g"; if (!flags.includes("g")) flags += "g";
       let re; try { re = new RegExp(p, flags); } catch (err) { st.className = "run-status bad"; st.textContent = "invalid: " + err.message; out.textContent = txt.value; return; }
       const text = txt.value; let count = 0, html = "", last = 0, m; re.lastIndex = 0;
@@ -3131,6 +3131,7 @@ ${ollamaLine}`;
       st.className = "run-status ok"; st.textContent = count + " match" + (count === 1 ? "" : "es");
     }
     [pat, flg, txt].forEach((i) => i.addEventListener("input", run));
+    run();
     const presets = [["Email", REGEX[0][1]], ["IPv4", REGEX[1][1]], ["URL", REGEX[2][1]], ["JWT", REGEX[7][1]]];
     $("#rxpreset", el).innerHTML = presets.map(([n, r]) => `<button class="btn ghost sm rxuse" data-r="${esc(r)}">${esc(n)}</button>`).join("");
     el.onclick = (e) => { const b = e.target.closest(".rxuse"); if (!b) return; pat.value = b.dataset.r; run(); pat.scrollIntoView({ block: "nearest" }); };
@@ -4096,8 +4097,8 @@ ${ollamaLine}`;
     const target = document.getElementById("target");
     const host = (target && target.value.trim()) || "localhost";
     el.innerHTML = `
-      <h2>Darknode API</h2>
-      <p class="dim">Run the API server locally for unlimited, private access. All the same capabilities as the cloud API, running on your machine.</p>
+      <h1>Darknode API</h1>
+      <p class="sub">Run the API server locally for unlimited, private access. All the same capabilities as the cloud API, running on your machine.</p>
       <div class="card" style="margin-bottom:18px">
         <div class="card-h">Start the API Server</div>
         <pre class="code-block" style="margin:0"><code># Start on default port 8080
