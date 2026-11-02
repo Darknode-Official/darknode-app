@@ -815,7 +815,12 @@ ipcMain.handle("results:list", async () => {
     }
     items.sort((a, b) => b.mtime - a.mtime);
     return { ok: true, dir: RESULTS_DIR, items };
-  } catch (e) { return { ok: false, error: e.message, dir: RESULTS_DIR, items: [] }; }
+  } catch (e) {
+    // The results folder is created lazily on the first saved run; until then a
+    // missing directory is the normal empty state, not an error to show the user.
+    if (e && e.code === "ENOENT") return { ok: true, dir: RESULTS_DIR, items: [] };
+    return { ok: false, error: e.message, dir: RESULTS_DIR, items: [] };
+  }
 });
 ipcMain.handle("results:read", async (_e, name) => {
   try {

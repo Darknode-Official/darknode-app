@@ -165,7 +165,7 @@ h3{font-size:1rem;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
   border:1px solid var(--line);border-radius:var(--r-xl);padding:24px 26px;
   background:radial-gradient(560px 220px at 92% -30%,color-mix(in srgb,var(--acc) 18%,transparent),transparent 60%),linear-gradient(180deg,color-mix(in srgb,var(--card) 90%,var(--acc) 3%),var(--card));box-shadow:var(--sh-1)}
 .dh-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:.6rem;font-weight:800;letter-spacing:.16em;color:var(--acc);margin-bottom:10px}
-.dh-copy h1{margin:0 0 8px}
+.dh-copy h1{display:block;margin:0 0 8px}  /* own line under the eyebrow (global h1 is inline-block for gradient clipping) */
 .dh-copy .sub{margin:0 0 16px}
 .dh-actions{display:flex;gap:10px;flex-wrap:wrap}
 .dot-live{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2.4s var(--ease) infinite}
@@ -176,7 +176,11 @@ h3{font-size:1rem;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
 .dh-term-t{margin-left:6px;font-size:.7rem;color:var(--mut);font-family:ui-monospace,monospace}
 .dh-term-body{margin:0;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.75;color:#cfe0f5;white-space:pre-wrap;word-break:break-word}
 .c-acc{color:var(--acc)}.c-ok{color:var(--ok)}
-@media(max-width:820px){.dash-hero{grid-template-columns:1fr}.dh-term{display:none}}
+/* With the fixed sidebar, the content column is ~245px narrower than the viewport,
+   so the two-column hero starts cramping the decorative terminal (ugly mid-word
+   wraps) well before 820px. Collapse to a single column — and drop the purely
+   decorative terminal — while there is still room to read the copy comfortably. */
+@media(max-width:1000px){.dash-hero{grid-template-columns:1fr}.dh-term{display:none}}
 .stat{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px 18px;overflow:hidden;box-shadow:var(--sh-1)}
 .stat::after{content:"";position:absolute;left:0;top:0;height:100%;width:3px;background:var(--grad-acc);opacity:.85}
 .stat-n{font-size:1.28rem;font-weight:800;letter-spacing:-.02em}
