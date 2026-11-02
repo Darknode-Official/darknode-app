@@ -31,7 +31,7 @@ group("webshell.origin: IPC sender gating", () => {
 
 group("webshell.origin: channel allow-list", () => {
   test("web shell gets only the D0 surface", () => {
-    for (const c of ["auth:google", "openExternal", "shell:titlebar"]) assert.ok(O.channelAllowed(c, WEB), c);
+    for (const c of ["auth:google", "openExternal", "shell:titlebar", "native:open"]) assert.ok(O.channelAllowed(c, WEB), c);
     for (const c of ["run", "agent:exec", "pty:spawn", "fs:write", "fs:read", "vm:start", "secret:get", "git:push", "net:get", "gmail:oauth"]) assert.notOk(O.channelAllowed(c, WEB), c);
   });
   test("classic keeps its full bridge", () => assert.ok(O.channelAllowed("run", CLASSIC)));

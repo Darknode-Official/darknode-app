@@ -108,8 +108,12 @@ const IPC_CTX = SHELL === "web"
   ? { mode: "web", appOrigin: webshell.APP_ORIGIN }
   : { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
 // Capabilities the web shell really exposes (window.darknode.desktop.caps).
-const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline"];
+const WEB_CAPS = ["auth.google", "openExternal", "titlebar", "offline", "native"];
 const WEB_PARTITION = "persist:darknode";
+// The native tools window (web shell only) runs the app's own bundled classic
+// renderer, never website content, so it keeps the full classic surface.
+const CLASSIC_CTX = { mode: "classic", classicFileUrl: require("url").pathToFileURL(CLASSIC_FILE).href };
+const ctxFor = (frame) => (SHELL === "web" && frame && webshell.isClassicUrl(frame.url, CLASSIC_CTX.classicFileUrl) ? CLASSIC_CTX : IPC_CTX);
 
 // The web origin must be a privileged, secure, service-worker-capable origin.
 // http://localhost already is (potentially trustworthy), so nothing is registered
@@ -123,7 +127,8 @@ const WEB_PARTITION = "persist:darknode";
   ipcMain.handle = (channel, fn) => rawHandle(channel, (event, ...args) => {
     let frame = null;
     try { const f = event.senderFrame; if (f) frame = { url: f.url, isTop: !f.parent }; } catch (_) {}
-    if (!webshell.isTrustedSender(frame, IPC_CTX) || !webshell.channelAllowed(channel, IPC_CTX)) {
+    const ctx = ctxFor(frame);
+    if (!webshell.isTrustedSender(frame, ctx) || !webshell.channelAllowed(channel, ctx)) {
       let from = "(no frame)"; try { from = frame ? new URL(frame.url).origin : from; } catch (_) {}
       console.warn("[darknode] refused IPC " + channel + " from " + from);
       throw new Error("IPC refused");
@@ -167,6 +172,63 @@ function setupWebSession() {
     cb(ALLOWED_PERMS.has(permission) && webshell.isAppUrl((details && details.requestingUrl) || wc.getURL()));
   });
   return ses;
+}
+
+// The window that hosts the native (classic) UI: the main window in classic mode,
+// the native tools window in web mode. Streamed output (terminals, scans, AI tokens)
+// goes there.
+let nativeWin = null;
+const uiWin = () => (SHELL === "web" ? nativeWin : win);
+function toUi(channel, payload) {
+  const w = uiWin();
+  if (w && !w.isDestroyed()) { try { w.webContents.send(channel, payload); } catch (_) {} }
+}
+const NATIVE_SECTIONS = new Set(["runner", "scanner", "fuzzer", "recon", "vms", "lab", "forensics", "loot", "tools", "payloads", "exploits", "http", "engagement", "playbooks", "wordlists", "cloud", "github", "agent", "home"]);
+function reapNativeWork() {
+  for (const p of procs.values()) { try { p.kill(); } catch (_) {} } procs.clear();
+  for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
+}
+// Web shell: open (or focus) the native tools window, optionally on one section.
+function openNativeWindow(sec) {
+  if (nativeWin && !nativeWin.isDestroyed()) {
+    if (sec) toUi("native:go", sec);
+    if (nativeWin.isMinimized()) nativeWin.restore();
+    nativeWin.focus();
+    return;
+  }
+  let force = false;
+  nativeWin = new BrowserWindow({
+    width: 1240, height: 820, minWidth: 900, minHeight: 600,
+    backgroundColor: "#06080f", show: false, frame: false, title: "Darknode native tools",
+    icon: path.join(__dirname, "renderer", "icon.png"),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true,
+      additionalArguments: ["--no-boot-anim"],
+    },
+  });
+  const nw = nativeWin;
+  nw.setMenuBarVisibility(false);
+  nw.once("ready-to-show", () => nw.show());
+  const rendererDir = path.join(__dirname, "renderer");
+  nw.webContents.on("will-navigate", (e, url) => {
+    let ok = false;
+    try { const p = fileURLToPath(url); ok = p === path.join(rendererDir, "index.html") || p.startsWith(rendererDir + path.sep); } catch (_) {}
+    if (!ok) e.preventDefault();
+  });
+  nw.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Same confirm-before-close as the classic app while its work is in flight.
+  nw.on("close", (e) => {
+    if (force || _forceClose || !workInFlight()) return;
+    e.preventDefault();
+    toUi("app:confirm-close");
+  });
+  nw.on("maximize", () => toUi("win:state", true));
+  nw.on("unmaximize", () => toUi("win:state", false));
+  nw.webContents.on("render-process-gone", reapNativeWork);
+  nw.on("closed", () => { if (nativeWin === nw) nativeWin = null; reapNativeWork(); });
+  nw._dnForceClose = () => { force = true; nw.close(); };
+  nw.loadFile(CLASSIC_FILE, sec ? { hash: "sec=" + sec } : undefined);
 }
 
 function windowFrameOptions() {
@@ -213,6 +275,10 @@ function createWindow() {
   // a stray click on X does not silently kill in-progress work. The renderer shows
   // the confirm (no native dialog); on "close anyway" it calls win:close-now.
   win.on("close", (e) => {
+    if (SHELL === "web") {
+      if (!_forceClose && nativeWin && !nativeWin.isDestroyed()) { e.preventDefault(); nativeWin.focus(); nativeWin.close(); }
+      return;
+    }
     if (_forceClose || !workInFlight()) return;
     e.preventDefault();
     try { win.webContents.send("app:confirm-close"); } catch (_) {}
@@ -232,6 +298,7 @@ function createWindow() {
   // renderer every few seconds. Reap them so nothing leaks; VMs are left running (main
   // still holds their handles and a reloaded renderer can re-list them).
   win.webContents.on("render-process-gone", () => {
+    if (SHELL === "web") return; // native work belongs to the native tools window
     for (const p of procs.values()) { try { p.kill(); } catch (_) {} } procs.clear();
     for (const p of ptys.values()) { try { p.kill(); } catch (_) {} } ptys.clear();
     for (const s of mcpServers.values()) { s.closedByUser = true; if (s.reconnectTimer) { try { clearTimeout(s.reconnectTimer); } catch (_) {} s.reconnectTimer = null; } try { if (s.proc) s.proc.kill("SIGKILL"); } catch (_) {} }
@@ -443,12 +510,12 @@ ipcMain.handle("run", (_e, { id, cmd, cwd }) => {
   const p = isWin ? spawn("cmd.exe", ["/c", cmd], { cwd: cwd || os.homedir() })
                   : spawn("/bin/sh", ["-c", cmd], { cwd: cwd || os.homedir() });
   procs.set(id, p);
-  const send = (chunk) => win && win.webContents.send("run:data", { id, chunk });
+  const send = (chunk) => toUi("run:data", { id, chunk });
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across pipe-chunk boundaries so multibyte UTF-8 isn't split into U+FFFD
   p.stdout.on("data", send);
   p.stderr.on("data", send);
-  p.on("close", (code) => { procs.delete(id); win && win.webContents.send("run:end", { id, code }); });
-  p.on("error", (err) => { send("[error] " + err.message + "\n"); procs.delete(id); win && win.webContents.send("run:end", { id, code: -1 }); });
+  p.on("close", (code) => { procs.delete(id); toUi("run:end", { id, code }); });
+  p.on("error", (err) => { send("[error] " + err.message + "\n"); procs.delete(id); toUi("run:end", { id, code: -1 }); });
   return true;
 });
 ipcMain.handle("kill", (_e, id) => { const p = procs.get(id); if (p) { try { p.kill(); } catch (_) {} } return true; });
@@ -515,7 +582,7 @@ ipcMain.handle("tool:install", (_e, { id, install }) => new Promise((res) => {
   if (cmd.startsWith("sudo ")) cmd = "pkexec " + cmd.slice(5).replace(/^apt install/, "apt-get install");
   const p = spawn("/bin/bash", ["-lc", cmd]);
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); // decode across chunk boundaries (multibyte-safe)
-  const send = (c) => win && win.webContents.send("tool:install:data", { id, chunk: c });
+  const send = (c) => toUi("tool:install:data", { id, chunk: c });
   p.stdout.on("data", send); p.stderr.on("data", send);
   p.on("close", (code) => res({ ok: code === 0, code, cmd }));
   p.on("error", (e) => { send("[error] " + e.message + "\n"); res({ ok: false, error: e.message, cmd }); });
@@ -530,8 +597,8 @@ ipcMain.handle("pty:spawn", (_e, { cols, rows }) => {
   try { p = nodePty.spawn(shell, [], { name: "xterm-color", cols: cols || 80, rows: rows || 24, cwd: os.homedir(), env: process.env }); }
   catch (e) { return { ok: false, error: e.message }; }
   ptys.set(id, p);
-  p.onData((d) => win && win.webContents.send("pty:data", { id, data: d }));
-  p.onExit(() => { ptys.delete(id); win && win.webContents.send("pty:exit", { id }); });
+  p.onData((d) => toUi("pty:data", { id, data: d }));
+  p.onExit(() => { ptys.delete(id); toUi("pty:exit", { id }); });
   return { ok: true, id, shell };
 });
 ipcMain.handle("pty:write", (_e, { id, data }) => { const p = ptys.get(id); if (p) { try { p.write(data); } catch (_) {} } }); // keystrokes can race pty exit
@@ -586,7 +653,7 @@ ipcMain.handle("ollama:stream", (_e, { id, body }) => new Promise((resolve) => {
           let j; try { j = JSON.parse(line); } catch (_) { continue; }
           if (j.error) { done({ ok: false, error: j.error }); return; }
           const m = j.message || {};
-          if (m.content) { content += m.content; win && win.webContents.send("ollama:token", { id, chunk: m.content }); }
+          if (m.content) { content += m.content; toUi("ollama:token", { id, chunk: m.content }); }
           if (m.tool_calls && m.tool_calls.length) toolCalls = (toolCalls || []).concat(m.tool_calls);
         }
       };
@@ -627,7 +694,7 @@ ipcMain.handle("claude:stream", (_e, { id, body, apiKey }) => new Promise((resol
           const p = line.slice(5).trim(); if (!p || p === "[DONE]") continue;
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           if (o.type === "error") { done({ ok: false, error: (o.error && o.error.message) || "stream error" }); return; }
-          const txt = anthropicDelta(o); if (txt) { content += txt; win && win.webContents.send("claude:token", { id, chunk: txt }); }
+          const txt = anthropicDelta(o); if (txt) { content += txt; toUi("claude:token", { id, chunk: txt }); }
           const u = usageOf(o); if (u) { if (u.inTok) inTok = u.inTok; if (u.outTok) outTok = u.outTok; }
         }
       };
@@ -691,7 +758,7 @@ ipcMain.handle("api:stream", (_e, { id, body, base, apiKey, model }) => new Prom
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           if (o.error) { done({ ok: false, error: (o.error && o.error.message) || "stream error" }); return; }
           const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
-          if (delta.content) { content += delta.content; win && win.webContents.send("api:token", { id, chunk: delta.content }); }
+          if (delta.content) { content += delta.content; toUi("api:token", { id, chunk: delta.content }); }
           if (delta.tool_calls && delta.tool_calls.length) toolCalls = mergeToolCallDeltas(toolCalls, delta.tool_calls);
           if (o.usage) { inTok = o.usage.prompt_tokens || inTok; outTok = o.usage.completion_tokens || outTok; }
         }
@@ -735,7 +802,7 @@ ipcMain.handle("dai:stream", (_e, { id, messages }) => new Promise((resolve) => 
           const p = line.slice(5).trim(); if (!p || p === "[DONE]") continue;
           let o; try { o = JSON.parse(p); } catch (_) { continue; }
           const ch = (o.choices && o.choices[0]) || {}, delta = ch.delta || {};
-          if (delta.content) { content += delta.content; win && win.webContents.send("dai:token", { id, chunk: delta.content }); }
+          if (delta.content) { content += delta.content; toUi("dai:token", { id, chunk: delta.content }); }
         }
       };
       r.on("data", pump);
@@ -904,10 +971,23 @@ ipcMain.handle("shell:titlebar", (_e, opts) => {
 });
 
 // ---- custom (frameless) window controls ----
-ipcMain.handle("win:minimize", () => { if (win) win.minimize(); });
-ipcMain.handle("win:maximize", () => { if (!win) return false; win.isMaximized() ? win.unmaximize() : win.maximize(); return win.isMaximized(); });
-ipcMain.handle("win:close", () => { if (win) win.close(); });
-ipcMain.handle("win:close-now", () => { _forceClose = true; if (win) win.close(); }); // user confirmed closing with work in flight
+// Each acts on the window that asked (the main window, or the native tools window).
+const callerWin = (e) => { try { return BrowserWindow.fromWebContents(e.sender); } catch (_) { return null; } };
+ipcMain.handle("win:minimize", (e) => { const w = callerWin(e); if (w) w.minimize(); });
+ipcMain.handle("win:maximize", (e) => { const w = callerWin(e); if (!w) return false; w.isMaximized() ? w.unmaximize() : w.maximize(); return w.isMaximized(); });
+ipcMain.handle("win:close", (e) => { const w = callerWin(e); if (w) w.close(); });
+ipcMain.handle("win:close-now", (e) => { // user confirmed closing with work in flight
+  const w = callerWin(e);
+  if (w && w === nativeWin && typeof w._dnForceClose === "function") { w._dnForceClose(); return; }
+  _forceClose = true; if (win) win.close();
+});
+
+// ---- Web shell: open the native tools window (optionally on one section) ----
+ipcMain.handle("native:open", (_e, sec) => {
+  if (SHELL !== "web") return false;
+  openNativeWindow(typeof sec === "string" && NATIVE_SECTIONS.has(sec) ? sec : "");
+  return true;
+});
 
 // ---- CVE search (NVD) + CISA KEV enrichment ----
 // The KEV catalog is fetched once per process and cached; it flags which of the
@@ -1011,16 +1091,16 @@ const scans = new Map();
 ipcMain.handle("scan:cancel", (_e, id) => { const s = scans.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("scan:ports", async (_e, { id, host, ports, timeout, concurrency }) => {
   const g = scope().enforce("scan", host);
-  if (!g.allowed) { win && win.webContents.send("scan:done", { id, open: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
+  if (!g.allowed) { toUi("scan:done", { id, open: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false };
   scans.set(id, state);
   const r = await scanPorts(host, ports, {
     timeout, concurrency, signal: state,
-    onHit: (port, banner) => { if (win) win.webContents.send("scan:hit", { id, port, banner }); },
-    onProgress: (done, total) => { if (win) win.webContents.send("scan:progress", { id, done, total }); },
+    onHit: (port, banner) => { toUi("scan:hit", { id, port, banner }); },
+    onProgress: (done, total) => { toUi("scan:progress", { id, done, total }); },
   });
   scans.delete(id);
-  win && win.webContents.send("scan:done", { id, open: r.open, cancelled: r.cancelled });
+  toUi("scan:done", { id, open: r.open, cancelled: r.cancelled });
   return { ok: true };
 });
 
@@ -1031,14 +1111,14 @@ const fuzzes = new Map();
 ipcMain.handle("fuzz:cancel", (_e, id) => { const s = fuzzes.get(id); if (s) s.cancelled = true; return true; });
 ipcMain.handle("fuzz:dirs", async (_e, { id, base, words, concurrency, timeout }) => {
   const g = scope().enforce("fuzz", base);
-  if (!g.allowed) { win && win.webContents.send("fuzz:done", { id, hits: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
+  if (!g.allowed) { toUi("fuzz:done", { id, hits: 0, cancelled: true, error: g.reason }); return { ok: false, blocked: true, error: g.reason }; }
   const state = { cancelled: false }; fuzzes.set(id, state);
   const r = await fuzzDirs(base, words, {
     timeout, concurrency, signal: state,
-    onHit: (hit) => { if (win) win.webContents.send("fuzz:hit", { id, path: hit.path, status: hit.status, len: hit.len, loc: hit.loc }); },
-    onProgress: (done, total) => { if (win) win.webContents.send("fuzz:progress", { id, done, total }); },
+    onHit: (hit) => { toUi("fuzz:hit", { id, path: hit.path, status: hit.status, len: hit.len, loc: hit.loc }); },
+    onProgress: (done, total) => { toUi("fuzz:progress", { id, done, total }); },
   });
-  fuzzes.delete(id); win && win.webContents.send("fuzz:done", { id, hits: r.hits, cancelled: r.cancelled });
+  fuzzes.delete(id); toUi("fuzz:done", { id, hits: r.hits, cancelled: r.cancelled });
   return { ok: true };
 });
 
@@ -1474,7 +1554,7 @@ ipcMain.handle("vm:start", async (_e, { id }) => {
   catch (e) { return { ok: false, error: e.message }; }
   let earlyErr = "";
   proc.stderr.on("data", (d) => (earlyErr += d.toString()));
-  proc.on("exit", () => { vmProcs.delete(id); win && win.webContents.send("vm:exit", { id }); });
+  proc.on("exit", () => { vmProcs.delete(id); toUi("vm:exit", { id }); });
   const rec = { proc, display, vncPort: 5900 + display, qmp: qmpPath };
   vmProcs.set(id, rec);
   // give QEMU a moment; if it died immediately, report the error

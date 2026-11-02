@@ -35,6 +35,8 @@ if (SHELL === "web") {
       openExternal: (url) => ipcRenderer.invoke("openExternal", String(url || "")),
       // Recolour the native window-controls overlay to match the page's top bar.
       titlebar: (opts) => ipcRenderer.invoke("shell:titlebar", opts || {}),
+      // Open the native tools window (terminal, scanner, VMs...), optionally on one section.
+      native: { open: (sec) => ipcRenderer.invoke("native:open", typeof sec === "string" ? sec : "") },
     };
     contextBridge.executeInMainWorld({
       func: (bridge) => {
@@ -43,6 +45,7 @@ if (SHELL === "web") {
         ns.auth = bridge.auth;
         ns.openExternal = bridge.openExternal;
         ns.titlebar = bridge.titlebar;
+        ns.native = bridge.native;
         window.darknode = ns;
       },
       args: [api],
@@ -91,6 +94,7 @@ contextBridge.exposeInMainWorld("darknode", {
   closeNow: () => ipcRenderer.invoke("win:close-now"),
   onConfirmClose: (cb) => ipcRenderer.on("app:confirm-close", () => cb()),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
+  onNativeGo: (cb) => ipcRenderer.on("native:go", (_e, sec) => { try { cb(String(sec || "")); } catch (_) {} }),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),

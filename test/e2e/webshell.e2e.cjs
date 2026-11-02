@@ -108,19 +108,45 @@ async function run(w) {
     check("worker /api/fetch works (CORS)", wk === "status:200", wk);
   }
 
-  // Desktop home, part 1: an account without the Deck (Test Mode is never admin) gets an
-  // honest notice, not the console.
+  // Desktop home, part 1: any signed-in session (Test Mode here) gets the Deck as the
+  // home screen, opened on Darknode AI, with no splash and no console behind it.
+  await ev("window.__tb = []; (() => { const t = window.darknode.titlebar; window.darknode.titlebar = (o) => { window.__tb.push(o); return t(o); }; })()");
   await ev("document.getElementById('testMode').click()");
-  const noted = await until(() => ev("!!document.querySelector('.dsk-note')"), 20000);
-  check("non-admin session: honest notice, no console fallback", noted && !(await ev("!!document.querySelector('.app-main') || !!document.querySelector('body > .dk')")), await ev("(document.querySelector('.dsk-note h1') || {}).textContent || ''"));
-  check("notice page has a window drag strip", (await ev("(() => { const cs = getComputedStyle(document.querySelector('.dsk-drag')); return cs.getPropertyValue('-webkit-app-region') || cs.getPropertyValue('app-region'); })()")) === "drag");
-  await wait(1200); // boot screen fade
-  await shot(w, (OFFLINE ? "offline-" : "") + "notice-1300x840");
+  const home = await until(() => ev("!!document.querySelector('body > .dk .dk-top')"), 20000);
+  check("signed-in session: the Deck is the home screen", home && !(await ev("!!document.querySelector('.app-main')")));
+  check("no splash in the app", await ev("!document.getElementById('bootscreen') || getComputedStyle(document.getElementById('bootscreen')).display === 'none'"));
+  const aiOpen = await until(() => ev("!!document.querySelector('.dk iframe[src*=\"/ai\"]')"), 15000);
+  check("the app opens on Darknode AI", aiOpen, await ev("[...document.querySelectorAll('.dk iframe')].map(f => f.getAttribute('src')).join(' ')"));
+  await wait(2500);
+  await shot(w, (OFFLINE ? "offline-" : "") + "home-ai-1300x840");
+  const model = await until(() => ev("(() => { const f = document.querySelector('.dk iframe[src*=\"/ai\"]'); const sel = f && f.contentDocument && f.contentDocument.getElementById('aiModel'); return sel ? sel.value : ''; })()"), 10000);
+  check("the Assistant defaults to Claude in the app", /^anthropic:claude-/.test(model || ""), model);
+
+  // "This computer": the Deck opens the app's native tools in their own window.
+  check("Deck shows the native tools group", await ev("!!document.querySelector('.dk-nv[data-native=\"runner\"]')"));
+  const { BrowserWindow } = require("electron");
+  const before = new Set(BrowserWindow.getAllWindows().map((x) => x.id));
+  await ev("document.querySelector('.dk-nv[data-native=\"runner\"]').click()");
+  const nw = await until(() => BrowserWindow.getAllWindows().find((x) => !before.has(x.id) && /renderer\/index\.html/.test(x.webContents.getURL())), 15000);
+  check("Terminal opens the native tools window", !!nw, nw ? nw.webContents.getURL() : "none");
+  if (nw) {
+    const nev = (js) => nw.webContents.executeJavaScript(js, true);
+    await until(() => nev("!!document.querySelector('.nav-item.active, .nav-item.on, .nav-item[aria-current]')"), 10000);
+    const st = JSON.parse(await nev("JSON.stringify({ run: typeof (window.darknode && window.darknode.run), boot: !!document.getElementById('bootscreen'), sec: (document.querySelector('.nav-item.active, .nav-item.on, .nav-item[aria-current]') || {}).dataset?.sec || '' })"));
+    check("native window has the full native bridge, no splash, on Terminal", st.run === "function" && !st.boot && st.sec === "runner", JSON.stringify(st));
+    const si = await nev("window.darknode.sysinfo().then(r => r.platform)");
+    check("native IPC works from the native window", si === process.platform, si);
+    await ev("document.querySelector('.dk-nv[data-native=\"scanner\"]').click()");
+    const sw = await until(() => nev("(document.querySelector('.nav-item.active, .nav-item.on, .nav-item[aria-current]') || {}).dataset?.sec === 'scanner'"), 8000);
+    check("a second pick reuses the window and switches section", sw && BrowserWindow.getAllWindows().filter((x) => /renderer\/index\.html/.test(x.webContents.getURL())).length === 1);
+    await wait(800);
+    if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); fs.writeFileSync(path.join(SHOTS, "native-scanner.png"), (await nw.webContents.capturePage()).toPNG()); }
+    nw.destroy(); await wait(300);
+  }
 
   // Desktop home, part 2: the Deck as the home screen. auth.js mounts it only for the
   // admin claim, which this harness cannot hold, so the harness calls the same
   // admin.js openDeck(user, { onSignOut }) that auth.js calls for an admin.
-  await ev("window.__tb = []; (() => { const t = window.darknode.titlebar; window.darknode.titlebar = (o) => { window.__tb.push(o); return t(o); }; })()");
   await ev("document.getElementById('view').innerHTML = ''; import('/js/admin.js?v=20261017d').then(m => m.openDeck({ uid: 'e2e-harness', email: 'test@darknode.ai', displayName: 'Harness' }, { onSignOut: () => { window.__signedOut = true; } })).then(() => 'ok', e => 'error:' + e.message)");
   const deck = await until(() => ev("!!document.querySelector('body > .dk .dk-top')"), 20000);
   check("Deck mounts as the app home screen", deck);
@@ -199,6 +225,10 @@ async function run(w) {
     check("IPC refused from an app-origin sub-frame", (await call({ url: ORIGIN + "/hashsuite?embed=1", parent: {} })) === "refused");
     check("IPC refused with no sender frame", (await call(null)) === "refused");
     check("IPC refused for a classic-only channel from the app origin", (await call({ url: ORIGIN + "/", parent: null }, "run")) === "refused");
+    const classicUrl = require("url").pathToFileURL(path.join(ROOT, "renderer", "index.html")).href;
+    check("classic channel allowed from the native window's top frame", (await call({ url: classicUrl + "#sec=runner", parent: null }, "sysinfo")) === "allowed");
+    check("classic channel refused from a sub-frame of the native window", (await call({ url: classicUrl, parent: {} }, "sysinfo")) === "refused");
+    check("native:open allowed from the app top frame", (await call({ url: ORIGIN + "/", parent: null }, "native:open")) === "allowed");
     check("IPC allowed from the app top frame", !!h && (await call({ url: ORIGIN + "/", parent: null })) === "allowed");
   } else check("IPC guard probe (internal handler map unavailable)", false);
 
