@@ -61,6 +61,7 @@ const procs = new Map();
 const ptys = new Map();
 let ptySeq = 0;
 let _zoom = 0; // persisted UI zoom level (webContents.setZoomLevel units)
+let _quitting = false;
 let _forceClose = false; // set once the user has confirmed closing with work in flight
 let _agentExec = 0; // in-flight agent:exec tool commands (no shared map, so counted)
 
@@ -191,7 +192,8 @@ function reapNativeWork() {
 // Web shell: open (or focus) the native tools window, optionally on one section.
 function openNativeWindow(sec, type) {
   if (nativeWin && !nativeWin.isDestroyed()) {
-    if (sec) toUi("native:go", { sec, type });
+    // Still loading from an earlier open: the page has no listener yet, so send it after load.
+    if (sec) { const go = () => toUi("native:go", { sec, type }); if (nativeWin.webContents.isLoading()) nativeWin.webContents.once("did-finish-load", () => setTimeout(go, 400)); else go(); }
     if (nativeWin.isMinimized()) nativeWin.restore();
     nativeWin.focus();
     return;
@@ -278,7 +280,13 @@ function createWindow() {
   // the confirm (no native dialog); on "close anyway" it calls win:close-now.
   win.on("close", (e) => {
     if (SHELL === "web") {
-      if (!_forceClose && nativeWin && !nativeWin.isDestroyed()) { e.preventDefault(); nativeWin.focus(); nativeWin.close(); }
+      if (!_forceClose && nativeWin && !nativeWin.isDestroyed()) {
+        e.preventDefault();
+        // Finish what the user asked for once the tools window is gone (it used to take a
+        // second click, and Cmd+Q was dropped). With work in flight the tools window asks first.
+        if (!workInFlight()) { const quitting = _quitting; nativeWin.once("closed", () => { if (quitting) app.quit(); else if (win && !win.isDestroyed()) win.close(); }); }
+        nativeWin.focus(); nativeWin.close();
+      }
       return;
     }
     if (_forceClose || !workInFlight()) return;
@@ -395,7 +403,14 @@ ipcMain.handle("sysinfo", () => ({
 }));
 
 // Check GitHub Releases for a newer version (renderer CSP blocks external fetch, so do it here).
+// One GitHub lookup an hour at most (unauthenticated API: 60 requests/hour per IP).
+let _updCache = null, _updAt = 0, _updP = null;
 ipcMain.handle("app:checkUpdate", async () => {
+  if (_updCache && Date.now() - _updAt < 3600000) return _updCache;
+  if (!_updP) _updP = checkUpdateNow().then((r) => { if (r.ok) { _updCache = r; _updAt = Date.now(); } return r; }).finally(() => { _updP = null; });
+  return _updP;
+});
+async function checkUpdateNow() {
   const cmp = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
   try {
     const cur = app.getVersion();
@@ -412,7 +427,7 @@ ipcMain.handle("app:checkUpdate", async () => {
     const latest = vers.length ? vers[vers.length - 1] : cur;
     return { ok: true, current: cur, latest, update: cmp(latest, cur) > 0, url: "https://github.com/Darknode-Official/darknode-app/releases/latest" };
   } catch (e) { return { ok: false, error: e.message }; }
-});
+}
 
 // ---- Native Gmail OAuth (Desktop client: loopback + PKCE) ----
 // A Desktop OAuth client can't keep its secret confidential (it ships in the app),
@@ -1191,8 +1206,9 @@ function whoisAsk(server, query) {
   });
 }
 ipcMain.handle("whois:query", async (_e, query) => {
-  query = (query || "").trim().replace(/^https?:\/\//, "").split("/")[0];
+  query = String(query || "").trim().replace(/^https?:\/\//, "").split("/")[0];
   if (!query) return { ok: false, error: "no query" };
+  if (!/^[\p{L}\p{N}._:-]{1,253}$/u.test(query)) return { ok: false, error: "enter a domain name or IP address" }; // CR/LF would send extra lines to the whois server
   try {
     let txt = await whoisAsk("whois.iana.org", query);
     const refer = (txt.match(/refer:\s*(\S+)/i) || [])[1] || (txt.match(/whois:\s*(\S+)/i) || [])[1];
@@ -1790,6 +1806,7 @@ ipcMain.handle("mcp:disconnect", (_e, name) => { mcpCleanup(name, true); return 
 ipcMain.handle("mcp:status", () => ({ ok: true, connected: [...mcpServers.keys()] }));
 
 app.on("before-quit", () => {
+  _quitting = true;
   for (const r of vmProcs.values()) { try { r.proc.kill("SIGKILL"); } catch (_) {} }
   for (const p of procs.values()) { try { p.kill(); } catch (_) {} }   // streamed `run` children
   for (const p of ptys.values()) { try { p.kill(); } catch (_) {} }     // open terminal PTYs
