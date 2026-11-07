@@ -1536,6 +1536,11 @@ ipcMain.handle("vm:list", () => {
   const vms = vmReadStore();
   return vms.map((v) => ({ ...v, running: vmProcs.has(v.id), vncPort: vmProcs.get(v.id) ? vmProcs.get(v.id).vncPort : null }));
 });
+// Counts only, for the Deck's usage heartbeat (web shell channel): no names, disks or ISOs.
+ipcMain.handle("vm:usage", () => {
+  const vms = vmReadStore();
+  return { count: vms.length, running: vms.filter((v) => vmProcs.has(v.id)).length, lastStart: vms.reduce((m, v) => Math.max(m, Number(v.lastStarted) || 0), 0) };
+});
 ipcMain.handle("vm:create", async (_e, { name, memMB, cpus, diskGB, iso }) => {
   vmEnsureDirs();
   name = (name || "vm").replace(/[^\w.-]/g, "_").slice(0, 40) || "vm";
@@ -1599,6 +1604,7 @@ ipcMain.handle("vm:start", async (_e, { id }) => {
     else if (/Could not access KVM|Permission denied.*kvm|\/dev\/kvm/i.test(err)) err = "Can't access /dev/kvm. Add yourself to the 'kvm' group (sudo usermod -aG kvm $USER) and log out/in.";
     return { ok: false, error: err.slice(0, 400) };
   }
+  try { const all = vmReadStore(); const me = all.find((x) => x.id === id); if (me) { me.lastStarted = Date.now(); vmWriteStore(all); } } catch (_) {}
   return { ok: true, vncPort: rec.vncPort, display };
 });
 ipcMain.handle("vm:stop", async (_e, { id, force }) => {
