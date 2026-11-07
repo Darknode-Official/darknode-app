@@ -47,6 +47,8 @@ if (SHELL === "web") {
         models: () => ipcRenderer.invoke("local:models"),
         // Is a newer desktop app published? -> { ok, current, latest, update, url }
         update: () => ipcRenderer.invoke("app:checkUpdate"),
+        // VM counts for the usage heartbeat -> { count, running, lastStart }
+        vmUsage: () => ipcRenderer.invoke("vm:usage"),
       },
     };
     contextBridge.executeInMainWorld({
