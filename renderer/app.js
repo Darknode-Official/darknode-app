@@ -357,6 +357,8 @@ try {
   if (!localStorage.getItem("s_ct_reset")) { localStorage.setItem("s_theme", "light"); localStorage.setItem("s_skin", "graphite"); localStorage.setItem("s_ct_reset", "1"); }
   const a = localStorage.getItem("s_accent"); if (a) applyAccent(a); const a2 = localStorage.getItem("s_accent2"); if (a2) document.documentElement.style.setProperty("--acc-2", a2); applyTheme(localStorage.getItem("s_theme") || "light"); applySkin(localStorage.getItem("s_skin") || "graphite");
 } catch (_) {}
+// Native tools window of the web shell: follow the Deck's theme (not saved as a preference).
+try { const follow = (t) => document.documentElement.setAttribute("data-theme", t); if (S.deckTheme) follow(S.deckTheme); if (S.onDeckTheme) S.onDeckTheme(follow); } catch (_) {}
 
 // ---- catalogs ----
 // {target} is substituted with the target-bar value at run time.
@@ -4245,7 +4247,7 @@ darknode api stop</code></pre>
 function stat(n, l) { return `<div class="stat"><div class="stat-n">${n}</div><div class="stat-l">${l}</div></div>`; }
 function qa(sec, t, d) { return `<button class="qa" data-sec="${sec}"><div class="qa-t">${t}</div><div class="qa-d">${d}</div></button>`; }
 
-let navTrail = [], curSec = "dash";
+let curSec = "dash";
 // Per-section accent tint (does NOT override the user's chosen --acc; used for headings, active bar, page strip).
 const SECTION_HUE = {
   audit: "#38bdf8",
@@ -4257,11 +4259,11 @@ const SECTION_HUE = {
 };
 function labelOfSec(s) { const b = document.querySelector('.nav-item[data-sec="' + s + '"] span'); return b ? b.textContent.trim() : s.charAt(0).toUpperCase() + s.slice(1); }
 function renderCrumbs(sec) {
-  const i = navTrail.indexOf(sec);
-  if (i >= 0) navTrail = navTrail.slice(0, i + 1); else navTrail.push(sec);
-  if (navTrail.length > 5) navTrail = navTrail.slice(-5);
+  // Where you are (nav group > section), not the order you visited things in.
   const cr = document.getElementById("crumbs"); if (!cr) return;
-  cr.innerHTML = navTrail.map((s, idx) => `<button class="crumb${idx === navTrail.length - 1 ? " cur" : ""}" data-crumb="${esc(s)}">${esc(labelOfSec(s))}</button>`).join('<span class="crumb-sep">›</span>');
+  const it = document.querySelector('.nav-item[data-sec="' + sec + '"]');
+  const gh = it && it.closest(".nav-group") && it.closest(".nav-group").querySelector(".nav-group-h");
+  cr.innerHTML = (gh ? `<span class="crumb-grp">${esc(gh.textContent.trim())}</span><span class="crumb-sep">›</span>` : "") + `<button class="crumb cur" data-crumb="${esc(sec)}">${esc(labelOfSec(sec))}</button>`;
 }
 function go(sec, arg) {
   if (currentTermCleanup) { currentTermCleanup(); currentTermCleanup = null; }

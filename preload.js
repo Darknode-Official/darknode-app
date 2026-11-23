@@ -108,6 +108,9 @@ contextBridge.exposeInMainWorld("darknode", {
   onConfirmClose: (cb) => ipcRenderer.on("app:confirm-close", () => cb()),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   onNativeGo: (cb) => ipcRenderer.on("native:go", (_e, m) => { try { cb(String((m && m.sec) || ""), typeof (m && m.type) === "string" ? m.type : ""); } catch (_) {} }),
+  // Web shell: the Deck's theme ("dark"/"light", "" if unknown) at open, then on every change.
+  deckTheme: (() => { const t = argOf("dn-deck-theme"); return t === "dark" || t === "light" ? t : ""; })(),
+  onDeckTheme: (cb) => ipcRenderer.on("native:theme", (_e, t) => { if (t === "dark" || t === "light") cb(t); }),
   noBootAnim: (() => { try { return process.env.DARKNODE_NO_BOOT === "1" || process.argv.includes("--no-boot-anim"); } catch (_) { return false; } })(),
   gmailOAuth: (creds) => ipcRenderer.invoke("gmail:oauth", creds),
   gmailRefresh: (arg) => ipcRenderer.invoke("gmail:refresh", arg),
