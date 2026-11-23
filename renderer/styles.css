@@ -603,6 +603,7 @@ code{background:var(--card2);border:1px solid var(--line);border-radius:5px;padd
 .crumb:hover{color:var(--acc);background:var(--acc-soft)}
 .crumb.cur{color:var(--txt);font-weight:600;cursor:default}
 .crumb-sep{color:var(--mut);opacity:.6}
+.crumb-grp{color:var(--mut);padding:2px 5px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);z-index:200;background:var(--card);border:1px solid var(--acc);border-left:3px solid var(--acc);color:var(--txt);padding:10px 16px;border-radius:10px;font-size:.85rem;box-shadow:var(--sh-pop);opacity:0;transition:opacity .25s var(--ease),transform .25s var(--ease);max-width:90vw}
 .toast.in{opacity:1;transform:translate(-50%,0)}
 /* promise-based confirm modal (replaces native confirm) */

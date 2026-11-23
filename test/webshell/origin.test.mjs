@@ -127,3 +127,9 @@ group("preload.js: bridge exposure is origin-gated", () => {
     assert.equal(c.exposed.length + c.executed.length, 0);
   });
 });
+
+group("webshell.origin: Deck theme from its top-bar colour", () => {
+  test("dark bars read dark", () => { assert.equal(O.barTheme("#06080f"), "dark"); assert.equal(O.barTheme("#1F1F1F"), "dark"); });
+  test("light bars read light", () => { assert.equal(O.barTheme("#ffffff"), "light"); assert.equal(O.barTheme("#f4f5f7"), "light"); });
+  test("anything else is unknown", () => { for (const v of ["", null, undefined, "#fff", "rgb(0,0,0)", "#zzzzzz", 12]) assert.equal(O.barTheme(v), ""); });
+});

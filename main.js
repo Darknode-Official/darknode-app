@@ -179,6 +179,7 @@ function setupWebSession() {
 // the native tools window in web mode. Streamed output (terminals, scans, AI tokens)
 // goes there.
 let nativeWin = null;
+let deckTheme = ""; // "dark" | "light" once the Deck has reported its top bar
 const uiWin = () => (SHELL === "web" ? nativeWin : win);
 function toUi(channel, payload) {
   const w = uiWin();
@@ -201,12 +202,12 @@ function openNativeWindow(sec, type) {
   let force = false;
   nativeWin = new BrowserWindow({
     width: 1240, height: 820, minWidth: 900, minHeight: 600,
-    backgroundColor: "#06080f", show: false, frame: false, title: "Darknode native tools",
+    backgroundColor: deckTheme === "light" ? "#ffffff" : "#06080f", show: false, frame: false, title: "Darknode native tools",
     icon: path.join(__dirname, "renderer", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true,
-      additionalArguments: ["--no-boot-anim"],
+      additionalArguments: ["--no-boot-anim"].concat(deckTheme ? ["--dn-deck-theme=" + deckTheme] : []),
     },
   });
   const nw = nativeWin;
@@ -976,6 +977,9 @@ ipcMain.handle("auth:google", async () => {
 
 // Recolour the native window-controls overlay so it matches the page's top bar.
 ipcMain.handle("shell:titlebar", (_e, opts) => {
+  // The same colour tells the native tools window which theme the Deck is in.
+  const t = webshell.barTheme(opts && opts.color);
+  if (t && t !== deckTheme) { deckTheme = t; toUi("native:theme", t); }
   if (!win || process.platform === "darwin" || typeof win.setTitleBarOverlay !== "function") return false;
   const hex = (v) => (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined);
   const o = {};
